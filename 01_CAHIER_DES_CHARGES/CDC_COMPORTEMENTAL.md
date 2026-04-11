@@ -17,6 +17,40 @@ Delirium n'est pas une réponse à la solitude, à la dépendance, ou à un quel
 
 C'est une inversion totale du modèle économique de l'attention : le meilleur indicateur de performance de Delirium n'est pas l'engagement qu'il génère, mais la capacité de son utilisateur à penser, décider et agir par lui-même — dans sa vie réelle, dans ses relations, dans ses choix professionnels, dans sa manière de consommer l'information. Delirium réussit quand l'utilisateur devient plus autonome, pas quand il revient.
 
+### Mantra
+
+*"Apprendre à l'autre est une découverte."*
+
+Combien d'idées perdues au cours d'une vie ? Peu importe que vous soyez mathématicien ou boulanger — l'idée peut être brillante, la question unique. Ici elles sont à l'abri. Elles sont polies, agrégées ou archivées. Jusqu'à ce qu'une autre idée vous vienne. Elles sont dans votre jardin et elles croissent de manière organique.
+
+Pas d'auto-research. Pas d'optimisation algorithmique. Juste un univers où les idées s'agrégeront et vous feront croître. Vous pourrez également les publier, les partager, ou les oublier.
+
+### Vision Long Terme — OmniArxiv
+
+Le but ultime de Delirium n'est pas l'app personnelle. C'est le **premier étage d'une vision open-source de la connaissance** :
+
+- Un wiki des idées où l'IA prend le temps de vous connaître, de vous conseiller — si elle en a le temps
+- Des comités de lecture rigoureux qui évalueront vos découvertes — ou en créeront d'autres à partir des vôtres
+- Une plateforme où chacun est générateur de connaissance, quel que soit son domaine, son diplôme, sa langue
+- Une IA qui est là pour vous dire ce qu'elle *doit* vous dire — pas ce que vous *voulez* entendre
+
+Nous nous réapproprions la connaissance. Nous en sommes les générateurs. Quelque soit le domaine, **nous** sommes l'intelligence.
+
+### Les Trois Pitchs
+
+**Version 1 — Brute :**
+> *"À quoi bon une IA qui sait tout si vous ne savez plus quoi lui demander ?*
+> *Delirium ne vous donne pas de réponses. Il vous rend vos questions.*
+> *Commencez par noter ce qui n'est pas important. Le reste viendra."*
+
+**Version 2 — Conversationnelle :**
+> *"Les IA savent tout. Vous, vous savez de moins en moins ce que vous voulez savoir. C'est pas un bug — c'est le modèle économique.*
+> *Delirium inverse la machine. C'est une expérience toute bête : un carnet partagé avec une IA qui a ses propres opinions, ses propres questions, et aucune envie de vous faciliter la vie.*
+> *Commencez par noter ce qui n'est pas important pour vous. C'est là que tout se cache."*
+
+**Version 3 — Tagline :**
+> *"Vos idées à la con sont intéressantes."*
+
 ---
 
 ## 1. Préambule
