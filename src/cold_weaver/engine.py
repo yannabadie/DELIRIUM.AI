@@ -3,13 +3,15 @@
 The Cold Weaver finds connections between ideas the user hasn't linked.
 Scans embedded fragments, scores pairs, filters by LLM quality, stores the best.
 
-See ARCHITECTURE_HARNESS.md section on Cold Weaver.
+Candidate generation prioritizes TOPIC DIVERSITY: pairs fragments from
+different conversations to find cross-project, cross-context collisions.
 """
 
 import json
 import logging
 import random
 import re
+from collections import defaultdict
 from itertools import combinations
 
 import numpy as np
@@ -25,7 +27,6 @@ from src.persona.state import PersonaState
 
 logger = logging.getLogger("delirium.cold_weaver")
 
-# Minimum LLM quality score to keep a collision
 MIN_CONNECTION_QUALITY = 0.4
 
 
@@ -49,7 +50,6 @@ class ColdWeaverEngine:
         if include_arxiv:
             self._fetch_and_store_arxiv()
 
-        # Get all embedded fragments, pre-filter noise
         all_fragments = self.episodic.get_all_with_embeddings()
         fragments = [f for f in all_fragments if is_substantive(f["user_input"])]
         logger.info("Fragments: %d total, %d substantive (filtered %d noise)",
@@ -58,13 +58,11 @@ class ColdWeaverEngine:
         if len(fragments) < 2:
             return 0
 
-        # Theme embeddings for relevance scoring
         themes = self.semantic.get_active_themes(threshold=0.1)
         theme_embeddings = []
         if themes:
             theme_embeddings = [self.embedder.embed(t["label"]) for t in themes]
 
-        # Score candidate pairs
         new_collisions = 0
         trivial_filtered = 0
         candidates = self._generate_candidates(fragments)
@@ -80,7 +78,6 @@ class ColdWeaverEngine:
             )
 
             if score >= DELIVERY_THRESHOLD:
-                # LLM quality gate: judge + describe the connection
                 connection, quality = self._judge_connection(frag_a, frag_b)
 
                 if quality < MIN_CONNECTION_QUALITY:
@@ -113,42 +110,68 @@ class ColdWeaverEngine:
         return new_collisions
 
     def _generate_candidates(self, fragments: list[dict]):
-        """Generate candidate pairs. Excludes same-conversation pairs."""
-        MAX_PAIRS = 1000
+        """Generate candidate pairs maximizing TOPIC DIVERSITY.
 
+        Strategy:
+        1. Group fragments by conversation (session_id)
+        2. Cross-source pairs (claude ↔ arxiv ↔ delirium): always included
+        3. Cross-conversation pairs: pick one fragment from each of two
+           DIFFERENT conversations — this catches cross-project collisions
+           even within the same broad domain
+        """
+        MAX_PAIRS = 2000
+
+        # Group by session_id
+        by_session = defaultdict(list)
+        for f in fragments:
+            by_session[f.get("session_id", "unknown")].append(f)
+
+        sessions = list(by_session.keys())
+        logger.info("Conversations: %d unique sessions", len(sessions))
+
+        # 1. Cross-source pairs (always valuable)
         cross_source = []
-        sorted_frags = sorted(fragments, key=lambda f: f.get("timestamp", ""))
-        n = len(sorted_frags)
+        sources = defaultdict(list)
+        for f in fragments:
+            sources[f["source"]].append(f)
 
-        for a, b in combinations(fragments, 2):
-            if a["source"] != b["source"]:
-                cross_source.append((a, b))
+        source_names = list(sources.keys())
+        for i, s1 in enumerate(source_names):
+            for s2 in source_names[i + 1:]:
+                for a in sources[s1]:
+                    for b in sources[s2]:
+                        cross_source.append((a, b))
 
-        # Same-source, different conversation, temporally distant
-        same_source_distant = []
-        stride = max(1, n // 20)
-        for i in range(n):
-            for j in range(i + stride, n, max(1, n // 50)):
-                if len(same_source_distant) >= MAX_PAIRS * 2:
-                    break
-                a, b = sorted_frags[i], sorted_frags[j]
-                # Skip same conversation — trivial connection
-                if a.get("session_id") and a["session_id"] == b.get("session_id"):
-                    continue
-                same_source_distant.append((a, b))
-            if len(same_source_distant) >= MAX_PAIRS * 2:
+        random.shuffle(cross_source)
+
+        # 2. Cross-conversation pairs (the key for intra-domain diversity)
+        cross_conv = []
+        session_pairs = list(combinations(sessions, 2))
+        random.shuffle(session_pairs)
+
+        for sess_a, sess_b in session_pairs:
+            if len(cross_conv) >= MAX_PAIRS * 2:
                 break
+            frags_a = by_session[sess_a]
+            frags_b = by_session[sess_b]
+            # Sample 1-2 fragments from each conversation to keep it manageable
+            sample_a = random.sample(frags_a, min(2, len(frags_a)))
+            sample_b = random.sample(frags_b, min(2, len(frags_b)))
+            for a in sample_a:
+                for b in sample_b:
+                    cross_conv.append((a, b))
 
-        random.shuffle(same_source_distant)
+        random.shuffle(cross_conv)
 
-        # Mix cross-source and same-source
-        half = MAX_PAIRS // 2
-        candidates = cross_source[:half]
-        candidates.extend(same_source_distant[:MAX_PAIRS - len(candidates)])
+        # Mix: cross-source gets priority, then cross-conversation fills the rest
+        candidates = cross_source[:MAX_PAIRS // 2]
+        remaining = MAX_PAIRS - len(candidates)
+        candidates.extend(cross_conv[:remaining])
 
-        logger.info("Candidates: %d (%d cross-source, %d same-source-diff-conv)",
-                     len(candidates), min(len(cross_source), half),
-                     len(candidates) - min(len(cross_source), half))
+        logger.info("Candidates: %d (%d cross-source, %d cross-conversation)",
+                     len(candidates),
+                     min(len(cross_source), MAX_PAIRS // 2),
+                     len(candidates) - min(len(cross_source), MAX_PAIRS // 2))
         return candidates
 
     def _embed_missing(self):
@@ -187,15 +210,11 @@ class ColdWeaverEngine:
         logger.info("Stored %d ArXiv papers", len(papers))
 
     def _judge_connection(self, frag_a: dict, frag_b: dict) -> tuple[str, float]:
-        """LLM judges if the connection is non-trivial and describes it.
-
-        Returns (connection_text, quality_score).
-        quality < MIN_CONNECTION_QUALITY → collision is discarded.
-        """
+        """LLM judges if the connection is non-trivial and describes it."""
         prompt = (
             "Tu es le Cold Weaver de Delirium. Deux idées d'un utilisateur :\n"
-            f"- Idée A ({frag_a.get('source', '?')}): {frag_a['user_input'][:200]}\n"
-            f"- Idée B ({frag_b.get('source', '?')}): {frag_b['user_input'][:200]}\n\n"
+            f"- Idée A ({frag_a.get('source', '?')}): {frag_a['user_input'][:300]}\n"
+            f"- Idée B ({frag_b.get('source', '?')}): {frag_b['user_input'][:300]}\n\n"
             "1. Ces deux idées ont-elles une connexion NON-TRIVIALE ? "
             "(pas juste 'les deux parlent de tech' ou 'les deux sont des questions')\n"
             "2. Si oui, décris la connexion en UNE phrase mystérieuse, pas didactique.\n"
@@ -214,23 +233,17 @@ class ColdWeaverEngine:
             return f"{frag_a['user_input'][:80]} <-> {frag_b['user_input'][:80]}", 0.5
 
     def _parse_judge_response(self, raw: str) -> tuple[str, float]:
-        """Parse the LLM judge response."""
         text = raw.strip()
-        # Strip markdown code fences
         if text.startswith("```"):
             lines = text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines)
-
         try:
             data = json.loads(text)
             connection = data.get("connection", "")
             quality = float(data.get("quality", 0.0))
-            quality = max(0.0, min(1.0, quality))
-            return connection, quality
+            return connection, max(0.0, min(1.0, quality))
         except (json.JSONDecodeError, ValueError, TypeError):
-            # Try to extract quality from text
             match = re.search(r"(\d+\.?\d*)", text)
             quality = float(match.group(1)) if match else 0.5
-            quality = max(0.0, min(1.0, quality))
-            return text[:200], quality
+            return text[:200], max(0.0, min(1.0, quality))
