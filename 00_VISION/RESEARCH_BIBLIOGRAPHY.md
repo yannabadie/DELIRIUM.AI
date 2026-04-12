@@ -185,3 +185,60 @@
 ## Note méthodologique
 
 Cette bibliographie a été enrichie le 12 avril 2026 avec les sources trouvées lors de la résolution des lièvres L6 (défensivité), L7 (IPC), L19 (archétype inversé) et L21 (companion AI).
+
+---
+
+## 10. Sycophantie des LLM (ajout 12/04/2026)
+
+### 10.1 ELEPHANT (2025)
+- **Titre :** Measuring and Understanding Social Sycophancy in LLMs
+- **Source :** arXiv:2505.13995
+- **Pertinence CRITIQUE :** Framework "social sycophancy" basé sur Goffman (face positive/négative). Tests sur r/AmITheAsshole. Base directe pour le détecteur de sycophantie des historiques IA importés.
+
+### 10.2 SycEval (Fanous et al. 2025)
+- **Titre :** Evaluating LLM Sycophancy
+- **Source :** AAAI/AIES 2025
+- **Pertinence :** 58% de sycophantie observée, persistance 78.5%. Les rebuttals avec citations déclenchent le plus de sycophantie régressive.
+
+### 10.3 TRUTH DECAY (2025)
+- **Titre :** Quantifying Multi-Turn Sycophancy in Language Models
+- **Source :** OpenReview
+- **Pertinence :** Sycophantie dans les dialogues étendus. Pertinent pour l'import d'historiques multi-tours.
+
+### 10.4 lechmazur/sycophancy (2026)
+- **Titre :** Narrator-bias sycophancy benchmark
+- **Source :** GitHub
+- **Pertinence :** Test si le modèle approuve les deux côtés d'un même conflit. Méthodologie applicable aux imports multi-plateformes.
+
+---
+
+## 11. Bulles Algorithmiques (ajout 12/04/2026)
+
+### 11.1 Kitchens, Johnson & Gray (2020)
+- **Titre :** Understanding Echo Chambers and Filter Bubbles
+- **Source :** MIS Quarterly 44(4)
+- **Pertinence :** Framework diversité informationnelle (separation, variety, disparity). Base pour H_bulle.
+
+### 11.2 Figà Talamanca & Arfini (2022)
+- **Titre :** Through the Newsfeed Glass: Rethinking Filter Bubbles
+- **Source :** PMC
+- **Pertinence :** L'isolation intellectuelle vient de l'interaction croyances/interface, pas de l'algorithme seul. Justifie la détection par signaux conversationnels.
+
+---
+
+## 12. Menaces et Fanfaronade (ajout 12/04/2026)
+
+### 12.1 Gales, T. (2015)
+- **Titre :** Identifying interpersonal stance in threatening discourse
+- **Source :** Discourse Studies
+- **Pertinence CRITIQUE :** Distinction stance EMOTION (fanfaronade) vs ENGAGEMENT (intention réelle). Base du score de fanfaronade.
+
+### 12.2 Ebner, Kavanagh & Whitehouse (2023)
+- **Titre :** Linguistic risk assessment for violent extremism
+- **Source :** Australian J. International Affairs
+- **Pertinence :** Déshumanisation comme prédicteur de passage à l'acte. Marqueur M5 du score de fanfaronade.
+
+### 12.3 van der Vegt et al. (2021)
+- **Titre :** The Grievance Dictionary: Understanding threatening language use
+- **Source :** PMC8516761
+- **Pertinence :** Dictionnaire psycholinguistique pour l'évaluation des menaces. Categóries applicables au S2.

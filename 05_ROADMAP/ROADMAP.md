@@ -38,10 +38,12 @@
 - [ ] Chiffrement local (SQLCipher)
 - [ ] 50 bêta-testeurs (friends & family)
 
-### Critères Go/No-Go Phase 2
-- Rétention J7 > 40%
-- Rétention J30 > 20%
-- NPS > 30 parmi les bêta-testeurs
+### Critères Go/No-Go Phase 1
+- Time-to-first-insight < 14 jours (1er "moment eurêka" détecté ou rapporté)
+- Collision engagement rate > 30% (les collisions Cold Weaver déclenchent une conversation)
+- Au moins 1 idée maturée/mois/utilisateur (H → C+)
+- Au moins 10% de partages spontanés ("t'as un pote à qui montrer ça ?")
+- ANTI-KPI : sessions > 45 min < 10% des utilisateurs
 - Aucun incident de sécurité ou de confidentialité
 - Le registre de ton détecté correspond au registre réel dans > 60% des cas
 

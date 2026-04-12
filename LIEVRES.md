@@ -110,4 +110,4 @@ Gap de recherche confirmé. Ancré dans la littérature sur les mesures implicit
 | L20 | Ouvert (recherche) | — |
 | L21 | **RÉSOLU** | 12/04/2026 |
 
-**8 résolus / 21 total + 3 décisions de design + score fanfaronade formalisé**
+**8 résolus / 21 total + 3 décisions de design + 4 formalisations majeures (fanfaronade, oubli, bulle, retrait, running gags)**
