@@ -97,3 +97,24 @@ Si Delirium fonctionne, les utilisateurs deviennent plus autonomes → ils ont m
 2. L'utilisateur "guéri" invite d'autres personnes — le churn alimente la croissance
 3. Valeur émotionnelle de la timeline — "mon parcours intellectuel sur 2 ans" a une valeur archivistique
 4. Accepter un churn naturel élevé et compenser par la viralité
+
+---
+
+## 6. Vision Long Terme — OmniArxiv
+
+Le but ultime n'est pas l'app personnelle. C'est le **premier étage d'une vision open-source de la connaissance** :
+
+- Un wiki des idées où l'IA prend le temps de vous connaître
+- Des comités de lecture rigoureux (IA + humains)
+- Chacun est générateur de connaissance
+- Une IA qui dit ce qu'elle *doit* dire, pas ce qu'on *veut* entendre
+
+**Le paradoxe du churn est mal posé.** L'utilisateur autonome ne PART PAS — il ÉVOLUE. De consommateur à générateur. Le jardin personnel devient un jardin collectif. Le produit change de forme (app → plateforme), pas de valeur.
+
+---
+
+## 7. Positionnement Anti-Meta
+
+*"Apprendre à l'autre est une découverte."*
+
+Mêmes moyens techniques que Meta/TikTok/YouTube. Fonction objectif opposée : autonomie, pas engagement. Quelque soit le domaine, **nous** sommes l'intelligence.

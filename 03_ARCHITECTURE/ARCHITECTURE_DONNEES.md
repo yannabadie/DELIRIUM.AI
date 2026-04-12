@@ -74,6 +74,81 @@ CREATE TABLE vision_timeline (
     related_conversation_ids TEXT,  -- JSON array
     created_at TIMESTAMP
 );
+
+-- Notes autonomes de Delirium (vie dans le Non-BlocNote)
+CREATE TABLE delirium_notes (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    note_type TEXT CHECK(note_type IN ('list_courses','question','actu_comment','meta','cold_weaver_question','rappel','humeur')),
+    trigger_source TEXT,
+    visible BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP
+);
+
+-- État épistémique des fragments (machine à 4 états OIDA)
+CREATE TABLE epistemic_state (
+    fragment_id TEXT PRIMARY KEY REFERENCES conversations(id),
+    state TEXT CHECK(state IN ('H','C+','E','B')) DEFAULT 'H',
+    value REAL DEFAULT 1.0,
+    audit_flag BOOLEAN DEFAULT FALSE,
+    reuse_count INTEGER DEFAULT 0,
+    damage REAL DEFAULT 0.0,
+    last_activated TIMESTAMP,
+    state_changed_at TIMESTAMP,
+    created_at TIMESTAMP
+);
+
+-- Corrélations comportementales détectées
+CREATE TABLE correlations (
+    id TEXT PRIMARY KEY,
+    event_a_ids TEXT NOT NULL,     -- JSON array : fragments émotionnels
+    event_b_ids TEXT NOT NULL,     -- JSON array : comportements observés
+    hypothesis TEXT,
+    cause_racine_hypothesis TEXT,
+    confidence REAL DEFAULT 0.1,
+    test_count INTEGER DEFAULT 0,
+    state TEXT CHECK(state IN ('H','C+','E','B')) DEFAULT 'H',
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Logs d'exécution (obligatoires, chiffrés)
+CREATE TABLE execution_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    log_type TEXT CHECK(log_type IN ('s1_decision','s2_analysis','cold_weaver','state_transition','danger_detection','signalement','persona_change')),
+    content_json TEXT NOT NULL,
+    danger_level INTEGER DEFAULT 0,
+    retention_until TIMESTAMP,
+    created_at TIMESTAMP
+);
+
+-- Signalements utilisateur du comportement IA
+CREATE TABLE signalements (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT REFERENCES conversations(id),
+    category TEXT CHECK(category IN ('ton_inapproprie','info_fausse','intrusif','malaise','autre')),
+    user_explanation TEXT,
+    correction_applied TEXT,
+    persona_params_before TEXT,
+    persona_params_after TEXT,
+    created_at TIMESTAMP
+);
+
+-- État de la persona à chaque point
+CREATE TABLE persona_state (
+    id TEXT PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    h_value REAL,
+    listen_ratio REAL,
+    creativity REAL,
+    confrontation REAL,
+    empathy REAL,
+    fatigue REAL,
+    phase TEXT CHECK(phase IN ('probing','silent','reflection','sparring')),
+    trigger TEXT,
+    created_at TIMESTAMP
+);
 ```
 
 ### 1.2 Base Vectorielle (ChromaDB ou LanceDB)

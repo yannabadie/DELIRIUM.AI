@@ -49,3 +49,31 @@
 - Pas de logging du contenu utilisateur côté serveur
 - Audit de sécurité annuel recommandé
 - Pen test avant lancement public
+
+---
+
+## 7. Logs d'Exécution (Obligatoires)
+
+- Décisions S1, analyses S2, collisions Cold Weaver, transitions d'état, détections danger, signalements, changements persona
+- **Chiffrement :** AES-256, clé dérivée du device
+- **Conservation :** 12 mois standard, 36 mois danger N2+, vie du compte pour signalements
+- **Suppression :** purgeable sauf logs danger N3 (conservation légale)
+- **Portabilité :** exportable JSON chiffré
+
+---
+
+## 8. Données Spéciales
+
+### Vision du Monde
+- Donnée dérivée sensible, chiffrée, cloud optionnel E2E
+- NON CONSULTABLE sauf maintenance auto
+- Suppressible, non modifiable directement
+
+### Features Paralingustiques
+- Extraites avant transcription (débit, pauses, volume)
+- Stockées comme delta par rapport à la baseline
+- Audio brut purgé immédiatement
+
+### Sécurité Proactive
+- Check périodique HaveIBeenPwned API (hash uniquement)
+- Notification utilisateur si credentials compromis

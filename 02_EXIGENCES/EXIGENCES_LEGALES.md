@@ -90,3 +90,47 @@
 - Disclaimer clair dans les CGU et l'onboarding
 - Seuil d'arrêt S2 pour éviter la responsabilité sur du matériel psychologique lourd
 - Assurance responsabilité civile professionnelle recommandée
+
+---
+
+## 8. EU AI Act (applicable août 2026)
+
+### Classification
+Delirium est **probablement un système à haut risque** (données émotionnelles, profils psychologiques, décisions d'intervention).
+
+### Obligations
+- Gestion des risques documentée
+- Documentation technique exhaustive
+- Surveillance humaine (human-in-the-loop)
+- Transparence et information utilisateurs
+- Signalement incidents graves (article 73)
+- Mécanisme signalement comportement IA (articles 14, 73)
+
+### Sanctions
+- Pratiques interdites : 35M€ / 7% CA
+- Non-conformité haut risque : 15M€ / 3% CA
+
+**Action requise :** consultation juridique spécialisée avant MVP.
+
+---
+
+## 9. Directive Responsabilité Produit (PLD révisée, décembre 2026)
+
+- Les systèmes d'IA sont des "produits" au sens de la PLD révisée
+- Charge de preuve allégée pour l'utilisateur
+- **Mitigation :** documentation, tests, signalement, logs
+
+---
+
+## 10. Non-Assistance à Personne en Danger (art. 223-6 CP)
+
+- L'IA n'a pas de personnalité juridique
+- L'opérateur PEUT être responsable si : détection + inaction + dommage
+- **Protection :** logs chiffrés (preuve), contact ICE (dispositif), protocole danger 3 niveaux (diligence)
+
+---
+
+## 11. Données Émotionnelles et RGPD
+
+- Le S2 analyse des émotions → potentiellement données sensibles (état santé mentale)
+- **Exigence :** consentement explicite spécifique pour le traitement émotionnel, distinct du consentement général
