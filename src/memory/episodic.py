@@ -139,16 +139,26 @@ class EpisodicMemory:
 
         Filters by retrieval_weight (Bjork RS) — forgotten fragments are excluded.
         """
-        rows = self.conn.execute(
-            "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, c.source "
-            "FROM conversations_fts f "
-            "JOIN conversations c ON c.rowid = f.rowid "
-            "WHERE conversations_fts MATCH ? "
-            "AND COALESCE(c.retrieval_weight, 1.0) >= ? "
-            "ORDER BY rank LIMIT ?",
-            (query, min_retrieval_weight, n_results)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        # FTS5 treats quotes and apostrophes as syntax — escape by quoting each token
+        safe_query = " ".join(
+            '"' + word.replace('"', '""') + '"'
+            for word in query.split() if word.strip()
+        )
+        if not safe_query:
+            return []
+        try:
+            rows = self.conn.execute(
+                "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, c.source "
+                "FROM conversations_fts f "
+                "JOIN conversations c ON c.rowid = f.rowid "
+                "WHERE conversations_fts MATCH ? "
+                "AND COALESCE(c.retrieval_weight, 1.0) >= ? "
+                "ORDER BY rank LIMIT ?",
+                (safe_query, min_retrieval_weight, n_results)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
 
     def purge_collisions(self) -> int:
         """Delete all collisions. Returns count deleted."""
