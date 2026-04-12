@@ -20,7 +20,10 @@
 
 ### 1.3 Backend
 - **API Gateway :** FastAPI (Python) ou Axum (Rust) — selon compétences équipe
-- **LLM :** Anthropic Claude API (S1 + S2) via tool-use pour le sourcing temps réel
+- **LLM :** MiniMax M2.7 API (OpenAI-compatible) via `MINIMAX_API_KEY`
+  - S1 : `MiniMax-M2.7` (réponse utilisateur)
+  - S2 : `MiniMax-M2.7-highspeed` (métacognition async)
+  - Contexte 205K tokens, coût ~$0.30/1M input, $1.20/1M output
 - **Veille (Cold Weaver) :** Worker asynchrone — CRON ou event-driven
   - ArXiv API (bulk metadata + semantic scholar enrichment)
   - GitHub API (trending repos, new releases)
@@ -64,7 +67,7 @@ Voir `03_ARCHITECTURE/ARCHITECTURE_DONNEES.md` pour le schéma détaillé.
 
 | Dépendance | Risque | Mitigation |
 |---|---|---|
-| Anthropic Claude API | Changement pricing/ToS | Abstraction LLM, fallback OpenAI/local |
+| MiniMax M2.7 API | Changement pricing/ToS | Abstraction LLM, fallback OpenAI/Anthropic |
 | Whisper.cpp | Performance on-device | Modèle small par défaut, medium optionnel |
 | ChromaDB/LanceDB | Stabilité, taille | Benchmark les deux, choisir au MVP |
 | APIs export IA | Disponibilité, format | Import manuel en fallback |

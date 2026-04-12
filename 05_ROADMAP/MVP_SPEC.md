@@ -53,7 +53,7 @@
 
 ```
 Mobile : Flutter + Whisper.cpp + SQLCipher + ChromaDB-lite
-Backend : FastAPI + Claude API (Anthropic)
+Backend : FastAPI + MiniMax M2.7 API (OpenAI-compatible, MINIMAX_API_KEY)
 OSINT : Module Python léger (APIs publiques)
 Infra : 1 serveur Scaleway (Paris)
 ```
