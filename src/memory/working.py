@@ -1,7 +1,7 @@
 """Working Memory — Layer 1. Composes the S1 prompt with context.
 
 See ARCHITECTURE_HARNESS.md section 3.6.
-Assembles: base prompt + persona state + retrieved memories + themes + collision.
+Assembles: base prompt + persona state + memories + themes + collision + vision + gags + retrait.
 """
 
 from src.config import get_s1_prompt
@@ -14,10 +14,17 @@ class WorkingMemory:
     def compose_s1_prompt(self, persona_state: PersonaState,
                           relevant_memories: list[dict],
                           active_themes: list[dict],
-                          pending_collision: dict | None = None) -> str:
+                          pending_collision: dict | None = None,
+                          vision_summary: str | None = None,
+                          gag_context: str | None = None,
+                          retrait_context: str | None = None) -> str:
         base_prompt = get_s1_prompt()
 
         sections = [base_prompt]
+
+        # Retrait context (if returning after absence)
+        if retrait_context:
+            sections.append(f"═══ CONTEXTE DE RETOUR ═══\n{retrait_context}")
 
         # Persona state injection
         sections.append(f"""
@@ -27,6 +34,12 @@ Phase : {persona_state.phase}
 Fatigue : {persona_state.fatigue:.2f}
 Confrontation : {persona_state.confrontation:.2f}
 Empathie : {persona_state.empathy:.2f}""")
+
+        # Vision du monde summary (Layer 4 — never disclose to user)
+        if vision_summary:
+            sections.append(
+                "═══ TA COMPRÉHENSION PROFONDE (ne JAMAIS restituer) ═══\n" + vision_summary
+            )
 
         # Retrieved memories
         if relevant_memories:
@@ -43,6 +56,10 @@ Empathie : {persona_state.empathy:.2f}""")
             sections.append(
                 "═══ THÈMES ACTIFS ═══\n" + "\n".join(theme_lines)
             )
+
+        # Running gags
+        if gag_context:
+            sections.append(gag_context)
 
         # Cold Weaver collision injection (max 1 per session — invariant 6)
         if pending_collision:

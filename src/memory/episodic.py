@@ -80,7 +80,8 @@ class EpisodicMemory:
         # Migrate: add columns if they don't exist (for DBs created in Phase 1)
         for col, typedef in [("source", "TEXT DEFAULT 'delirium'"),
                              ("embedding", "BLOB"),
-                             ("sycophancy_score", "REAL")]:
+                             ("sycophancy_score", "REAL"),
+                             ("retrieval_weight", "REAL DEFAULT 1.0")]:
             try:
                 self.conn.execute(f"ALTER TABLE conversations ADD COLUMN {col} {typedef}")
             except sqlite3.OperationalError:
@@ -132,15 +133,20 @@ class EpisodicMemory:
         )
         self.conn.commit()
 
-    def search(self, query: str, n_results: int = 5) -> list[dict]:
-        """Search past conversations by text similarity (FTS5)."""
+    def search(self, query: str, n_results: int = 5,
+               min_retrieval_weight: float = 0.1) -> list[dict]:
+        """Search past conversations by text similarity (FTS5).
+
+        Filters by retrieval_weight (Bjork RS) — forgotten fragments are excluded.
+        """
         rows = self.conn.execute(
             "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, c.source "
             "FROM conversations_fts f "
             "JOIN conversations c ON c.rowid = f.rowid "
             "WHERE conversations_fts MATCH ? "
+            "AND COALESCE(c.retrieval_weight, 1.0) >= ? "
             "ORDER BY rank LIMIT ?",
-            (query, n_results)
+            (query, min_retrieval_weight, n_results)
         ).fetchall()
         return [dict(r) for r in rows]
 

@@ -79,6 +79,23 @@ Delirium AI — Système immunitaire cognitif. App grand public "Non-BlocNote" h
 - Cadre juridique (AI Act, RGPD, PLD, art. 223-6)
 - 7/21 lièvres résolus
 
+### FAIT (implémentation — Phases 1+2 complètes)
+- Prototype CLI fonctionnel (`src/main.py`) avec conversation loop + streaming
+- Client LLM MiniMax M2.7 (`src/llm_client.py`) avec suppression `<think>` tags
+- PersonaEngine 6D (`src/persona/engine.py`) avec transitions
+- S2 Analyzer async (`src/s2/analyzer.py`) avec JSON structuré
+- Mémoire épisodique SQLite (`src/memory/episodic.py`)
+- Mémoire sémantique graphe (`src/memory/semantic.py`)
+- Mémoire de travail (`src/memory/working.py`) avec injection collision
+- Cold Weaver moteur de collision (`src/cold_weaver/engine.py`)
+- Collision scoring SerenQA (`src/cold_weaver/scoring.py`)
+- ArXiv API source (`src/cold_weaver/sources.py`)
+- Import ChatGPT (`src/import_/chatgpt.py`)
+- Détection sycophantie (`src/import_/sycophancy.py`)
+- Embeddings hash 384D (`src/embeddings.py`)
+- Tests comportementaux 20/20 (`tests/test_behavior.py`)
+- Commandes CLI : /import chatgpt, /collisions, /status
+
 ### PAS FAIT (à explorer, formaliser, documenter)
 - Calibration des 20 paramètres du formalisme
 - Formalisation de la convergence de H (oscillation, stabilité)
@@ -101,14 +118,16 @@ Delirium AI — Système immunitaire cognitif. App grand public "Non-BlocNote" h
 - Property-based testing du persona engine (H converge-t-il ? oscille-t-il ?)
 
 ### PAS FAIT (implémentation)
-- Prototype CLI (Python) : prompt + API + mémoire SQLite + S2 async
-- Pipeline OSINT (APIs publiques)
-- PersonaGenerator (function d'adjacence dans l'espace d'embeddings)
-- PersonaEngine (machine à états, transitions)
-- MemoryOrchestrator (4 couches)
-- Cold Weaver worker
-- Tests automatisés des 12+ scénarios
-- Base de 2000 intérêts pré-embedés
+- Import Claude.ai conversations (`src/import_/claude_ai.py`)
+- Import générique (`src/import_/generic.py`)
+- Vision du monde synthèse (`src/memory/world_vision.py`) — voir `VISION_DU_MONDE_SCHEMA.md`
+- Oubli sélectif Bjork (`src/memory/decay.py`) — voir `ARCHITECTURE_OUBLI_SELECTIF.md`
+- Running gags tracker (`src/persona/gags.py`) — voir `ARCHITECTURE_RUNNING_GAGS.md`
+- Retrait engine (`src/persona/retrait.py`) — voir `ARCHITECTURE_RETRAIT.md`
+- Détection bulle prototype (`src/memory/bubble.py`) — voir `DETECTION_BULLE.md`
+- Tests adversariaux (`tests/test_adversarial.py`) — voir `TESTS_ADVERSARIAUX.md`
+- Audit cohérence inter-documents
+- Property-based testing du PersonaEngine
 
 ## Règles pour Claude Code
 
