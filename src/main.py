@@ -304,9 +304,9 @@ class Delirium:
         pending = self.episodic.get_pending_collision()
         if pending:
             console.print(f"\n[heading]Meilleure collision (score {pending['collision_score']:.2f}):[/heading]")
-            console.print(f"  A: {pending['a_input'][:80]}")
-            console.print(f"  B: {pending['b_input'][:80]}")
-            console.print(f"  [info]{pending['connection'][:120]}[/info]")
+            console.print(f"  A: {pending['a_input']}")
+            console.print(f"  B: {pending['b_input']}")
+            console.print(f"  [info]{pending['connection']}[/info]")
 
     def cmd_status(self):
         state = self.persona_engine.get_current_state()
@@ -347,7 +347,7 @@ class Delirium:
             console.print(f"\n[heading]═══ RUNNING GAGS ({len(gags)}) ═══[/heading]")
             for g in gags[:5]:
                 cb = f" ({g['user_callback_count']} callbacks)" if g["user_callback_count"] else ""
-                console.print(f"  - {g['seed_content'][:50]} [{g['type']}] {g['occurrence_count']}x{cb}")
+                console.print(f"  - {g['seed_content']} [{g['type']}] {g['occurrence_count']}x{cb}")
 
         console.print(f"\n[heading]═══ BULLE (H_bulle) ═══[/heading]")
         console.print(f"  Score: {bubble['h_bulle']:.3f} ({bubble['bubble_status']})")
@@ -356,7 +356,7 @@ class Delirium:
             who = vision.get("who_they_are", {})
             console.print(f"\n[heading]═══ VISION DU MONDE (v{vision.get('version', '?')}) ═══[/heading]")
             if who.get("summary"):
-                console.print(f"  {who['summary'][:120]}")
+                console.print(f"  {who['summary']}")
 
     def close(self):
         self.episodic.close()

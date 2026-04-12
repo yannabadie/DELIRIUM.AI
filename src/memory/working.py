@@ -45,7 +45,7 @@ Empathie : {persona_state.empathy:.2f}""")
         if relevant_memories:
             mem_lines = []
             for m in relevant_memories[:5]:
-                mem_lines.append(f"- [{m.get('timestamp', '?')}] Utilisateur : {m['user_input'][:100]}")
+                mem_lines.append(f"- [{m.get('timestamp', '?')}] Utilisateur : {m['user_input']}")
             sections.append(
                 "═══ SOUVENIRS PERTINENTS ═══\n" + "\n".join(mem_lines)
             )
@@ -63,8 +63,8 @@ Empathie : {persona_state.empathy:.2f}""")
 
         # Cold Weaver collision injection (max 1 per session — invariant 6)
         if pending_collision:
-            a_summary = pending_collision.get("a_input", "")[:150]
-            b_summary = pending_collision.get("b_input", "")[:150]
+            a_summary = pending_collision.get("a_input", "")
+            b_summary = pending_collision.get("b_input", "")
             connection = pending_collision.get("connection", "")
             sections.append(f"""
 ═══ COLLISION COLD WEAVER (injection latérale — max 1/session) ═══
