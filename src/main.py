@@ -238,6 +238,54 @@ class Delirium:
         from src.import_.claude_ai import ClaudeImporter
         self._run_import(ClaudeImporter(), path, "claude")
 
+    def cmd_import_github(self, username: str):
+        """Import GitHub repos as semantic fragments for Cold Weaver."""
+        from src.import_.github import GitHubImporter
+        from src.import_.enricher import enrich_github_fragment
+
+        importer = GitHubImporter(llm=self.llm)
+
+        with console.status(f"Fetching GitHub repos for {username}..."):
+            messages = importer.import_user(username)
+
+        if not messages:
+            console.print("[info]Aucun repo trouvé.[/info]")
+            return
+
+        console.print(f"[info]{len(messages)} fragments générés, embedding + enrichissement...[/info]")
+        dummy_state = PersonaState()
+
+        with console.status(f"Import github... 0/{len(messages)}") as status:
+            for i, msg in enumerate(messages):
+                # Enrich with similar repos + ArXiv papers
+                repo_meta = {"description": msg.assistant_response,
+                             "topics": [], "language": "", "name": msg.conversation_title}
+                enriched = enrich_github_fragment(msg.user_input, repo_meta)
+                emb = self.embedder.embed(enriched)
+                self.episodic.store(
+                    user_message=msg.user_input,
+                    response=msg.assistant_response,
+                    session_id=f"import_github_{msg.conversation_title[:30]}",
+                    persona_state=dummy_state,
+                    source="github",
+                    embedding=emb,
+                )
+                if (i + 1) % 10 == 0:
+                    status.update(f"Import github... {i + 1}/{len(messages)}")
+
+        self.episodic.log_execution(None, "github_import", {
+            "username": username, "fragments_imported": len(messages),
+        })
+        console.print(f"[success]Import terminé: {len(messages)} fragments GitHub[/success]")
+
+        # Extract themes
+        from src.import_.theme_extractor import ThemeExtractor
+        with console.status("Extraction des thèmes..."):
+            extractor = ThemeExtractor()
+            themes = extractor.extract(messages, self.llm, self.semantic)
+        if themes:
+            console.print(f"[success]Thèmes: {', '.join(themes[:10])}[/success]")
+
     def cmd_import_generic(self, path: str):
         from src.import_.generic import GenericImporter
         self._run_import(GenericImporter(), path, "generic")
@@ -328,7 +376,7 @@ class Delirium:
         console.print(f"\n[heading]═══ MÉMOIRE (Bjork {decay_stats['mode']}) ═══[/heading]")
         console.print(f"  Total: {decay_stats['total']}  |  Accessible: {decay_stats['accessible']}  "
                        f"|  En déclin: {decay_stats['fading']}  |  Oubliés: {decay_stats['forgotten']}")
-        for source in ("delirium", "chatgpt", "claude", "arxiv"):
+        for source in ("delirium", "chatgpt", "claude", "arxiv", "github"):
             n = self.episodic.get_fragment_count(source)
             if n > 0:
                 console.print(f"    {source}: {n}")
@@ -378,7 +426,7 @@ def main():
         "[info]\"Vos idées à la con sont intéressantes.\"[/info]",
         border_style="cyan",
     ))
-    console.print("[info]Commandes: /import chatgpt|claude|generic <path>, /collisions [--purge], /status[/info]")
+    console.print("[info]Commandes: /import chatgpt|claude|generic <path>, /import github <username>, /collisions [--purge], /status[/info]")
     console.print("[info]Ctrl+C ou 'quit' pour quitter[/info]\n")
 
     delirium = Delirium()
@@ -409,6 +457,8 @@ def main():
                 delirium.cmd_import_claude(stripped[len("/import claude "):].strip())
             elif stripped.startswith("/import generic "):
                 delirium.cmd_import_generic(stripped[len("/import generic "):].strip())
+            elif stripped.startswith("/import github "):
+                delirium.cmd_import_github(stripped[len("/import github "):].strip())
             elif stripped in ("/collisions", "/collisions --purge"):
                 delirium.cmd_collisions(purge="--purge" in stripped)
             elif stripped == "/status":

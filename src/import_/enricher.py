@@ -191,3 +191,116 @@ def _fetch_webpage(url: str) -> str | None:
         parts.append(parser.description)
 
     return " ".join(parts) if parts else None
+
+
+# --- GitHub fragment enrichment (for repo imports) ---
+
+def enrich_github_fragment(text: str, repo_metadata: dict) -> str:
+    """Enrich a GitHub repo fragment with similar repos and ArXiv papers.
+
+    Called BEFORE embedding so the vector captures related ecosystem context.
+    """
+    enrichments = []
+
+    similar = _search_similar_repos(repo_metadata)
+    if similar:
+        enrichments.append(similar)
+
+    related = _search_arxiv_by_keywords(repo_metadata)
+    if related:
+        enrichments.append(related)
+
+    if not enrichments:
+        return text
+
+    return text + "\n\n[Contexte enrichi:]\n" + "\n".join(enrichments)
+
+
+def _search_similar_repos(repo_metadata: dict) -> str | None:
+    """Search GitHub for similar repos via API."""
+    desc = repo_metadata.get("description", "")
+    topics = repo_metadata.get("topics", [])
+    language = repo_metadata.get("language", "")
+
+    if not desc and not topics:
+        return None
+
+    # Build search query from topics or description keywords
+    if topics:
+        query = " ".join(topics[:3])
+    else:
+        words = [w for w in desc.split()[:5] if len(w) > 3]
+        query = " ".join(words)
+
+    if not query:
+        return None
+
+    import urllib.parse
+    search_url = (
+        f"https://api.github.com/search/repositories?"
+        f"q={urllib.parse.quote(query)}"
+        f"{'+language:' + urllib.parse.quote(language) if language else ''}"
+        f"&sort=stars&per_page=3"
+    )
+    req = urllib.request.Request(search_url, headers={
+        **_HEADERS,
+        "Accept": "application/vnd.github.v3+json",
+    })
+    try:
+        import time
+        time.sleep(2)  # rate limiting
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            import json
+            data = json.loads(resp.read())
+
+        items = data.get("items", [])
+        # Exclude the user's own repos
+        own_name = repo_metadata.get("name", "")
+        items = [it for it in items if it.get("name") != own_name][:3]
+
+        if not items:
+            return None
+
+        parts = ["[Repos similaires:]"]
+        for it in items:
+            desc_short = (it.get("description") or "")[:80]
+            parts.append(f"  {it['full_name']} — {desc_short}")
+        return "\n".join(parts)
+    except Exception as e:
+        logger.debug("Similar repos search failed: %s", e)
+        return None
+
+
+def _search_arxiv_by_keywords(repo_metadata: dict) -> str | None:
+    """Search ArXiv for papers related to repo topics."""
+    desc = repo_metadata.get("description", "")
+    topics = repo_metadata.get("topics", [])
+
+    keywords = " ".join(topics[:3]) if topics else " ".join(desc.split()[:5])
+    if not keywords or len(keywords) < 5:
+        return None
+
+    try:
+        import xml.etree.ElementTree as ET
+        import urllib.parse
+        query = urllib.parse.quote(keywords)
+        url = f"http://export.arxiv.org/api/query?search_query=all:{query}&max_results=2&sortBy=relevance"
+        req = urllib.request.Request(url, headers=_HEADERS)
+
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            root = ET.fromstring(resp.read())
+
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        entries = root.findall("atom:entry", ns)
+        if not entries:
+            return None
+
+        parts = ["[Papers ArXiv liés:]"]
+        for entry in entries[:2]:
+            title = (entry.findtext("atom:title", "", ns) or "").strip().replace("\n", " ")
+            if title:
+                parts.append(f"  {title[:120]}")
+        return "\n".join(parts) if len(parts) > 1 else None
+    except Exception as e:
+        logger.debug("ArXiv keyword search failed: %s", e)
+        return None
