@@ -54,7 +54,7 @@ search/             Sources OIDA V4.2 (papier + framework Python)
 | Document | Description |
 |---|---|
 | `01_CDC/CDC_COMPORTEMENTAL.md` | **Le plus important.** Comment Delirium se comporte. |
-| `00_VISION/VISION_v4.md` | Vision produit complète |
+| `00_VISION/VISION_v5.md` | Vision produit consolidée (sessions 1-2) |
 | `04_FORMALISME/FORMALISME_DELIRIUM_v0.1.md` | Formalisme mathématique |
 | `04_FORMALISME/AUDIT_FORMEL_OIDA_V42.md` | Audit critique du formalisme source |
 | `00_VISION/SCENARIOS_WHATIF.md` | Scénarios de test et contradictions résolues |

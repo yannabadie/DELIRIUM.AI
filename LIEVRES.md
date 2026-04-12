@@ -87,8 +87,8 @@ Gap de recherche confirmé. Ancré dans la littérature sur les mesures implicit
 ### L20 — Psycho/socio non-occidentale absente
 **Action :** recherche ciblée.
 
-### L21 — Companion AI — extraction formelle des patterns de jeu vidéo
-**Action :** analyse systématique des arbres de loyauté/approbation dans BG3, Mass Effect, Witcher 3.
+### L21 — Companion AI — extraction formelle des patterns de jeu vidéo — [RÉSOLU 12/04/2026]
+**Résolu :** 8 patterns extraits de BG3/Mass Effect/Witcher 3 (accumulateur d'approbation, valeurs propres, seuils à événements, retrait, évolution morale, présence contextuelle, mémoire narrative, quêtes personnelles). 2 inversions clés : complémentarité → adjacence, fiabilité parfaite → imperfection intentionnelle. Voir `00_VISION/COMPANION_AI_PATTERNS.md`.
 
 ---
 
@@ -107,6 +107,7 @@ Gap de recherche confirmé. Ancré dans la littérature sur les mesures implicit
 | L17 | **RÉSOLU** | 12/04/2026 |
 | L18 | Ouvert (juridique) | — |
 | L19 | **Partiel** | 12/04/2026 |
-| L20-L21 | Ouvert (recherche) | — |
+| L20 | Ouvert (recherche) | — |
+| L21 | **RÉSOLU** | 12/04/2026 |
 
-**6 résolus / 21 total**
+**7 résolus / 21 total**
