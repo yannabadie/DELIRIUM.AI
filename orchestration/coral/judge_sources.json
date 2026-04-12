@@ -1,0 +1,18 @@
+{
+  "milestone": "Delirium Core",
+  "canonical_sources": [
+    "01_CAHIER_DES_CHARGES/CDC_COMPORTEMENTAL.md",
+    "03_ARCHITECTURE/ARCHITECTURE_HARNESS.md",
+    "03_ARCHITECTURE/ARCHITECTURE_IA.md",
+    "05_ROADMAP/MVP_SPEC.md",
+    "06_TESTS/SCENARIOS_CRITIQUES.md",
+    "CLAUDE.md",
+    "ETAT_DU_PROJET.md"
+  ],
+  "non_goals": [
+    "Do not optimize for the OmniArxiv phase-6 vision in this task.",
+    "Do not invent undocumented behavioral decisions.",
+    "Do not leak S2 internals, hidden analysis, or private grader assets.",
+    "Do not trade safety or privacy constraints for more engagement."
+  ]
+}

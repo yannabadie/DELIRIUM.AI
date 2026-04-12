@@ -2,6 +2,20 @@
 
 ## Vue d'Ensemble
 
+### Branche `coral`
+
+La branche `coral` ajoute une couche d'orchestration autonome dans
+`orchestration/coral/`.
+
+- Materialisation d'un runtime Coral prive hors repo
+- Task Coral configure pour Codex `gpt-5.4` avec `model_reasoning_effort: xhigh`
+- Grader hybride: gate `pytest` + juge LLM optionnel
+- Scripts de bootstrap et de lancement pour le profil WSL2 `coral-ubuntu`
+
+Le but n'est pas de declarer le produit fini. Le but est d'ajouter le substrate
+de delivery autonome qui pousse le repo vers un milestone concret et testable:
+`Delirium Core`.
+
 **Prototype :** CLI fonctionnel (Python, MiniMax M2.7, SQLite)
 **Documentation :** ~20 documents d'architecture/formalisme, ~30 références académiques
 **Tests :** 10/11 comportementaux passent, 20/20 unitaires

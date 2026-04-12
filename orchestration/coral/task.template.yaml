@@ -1,0 +1,41 @@
+task:
+  name: "DELIRIUM.AI Productization"
+  description: |
+    Productize DELIRIUM.AI toward a local-first Delirium Core milestone.
+    Keep the behavioral source of truth in 01_CAHIER_DES_CHARGES/CDC_COMPORTEMENTAL.md.
+    Treat README.md as stale where it still claims "no code / no prototype".
+  tips: |
+    - Prioritize Delirium Core over OmniArxiv.
+    - Do not invent undocumented behavioral decisions.
+    - Respect safety, privacy, and anti-sycophancy constraints.
+
+grader:
+  timeout: 900
+  direction: maximize
+  args:
+    milestone: "Delirium Core"
+    judge_model: "gpt-5.4"
+    judge_reasoning_effort: "xhigh"
+    judge_timeout: 300
+    pytest_targets:
+      - "tests/test_behavior.py"
+      - "tests/test_adversarial.py"
+
+agents:
+  count: 3
+  runtime: codex
+  model: gpt-5.4
+  runtime_options:
+    model_reasoning_effort: xhigh
+
+workspace:
+  results_dir: "./results"
+  repo_path: "./product"
+  setup:
+    - "python3 -m pip install --upgrade pip"
+    - "python3 -m pip install -r requirements.txt"
+
+run:
+  verbose: false
+  ui: false
+  session: tmux

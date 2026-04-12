@@ -3,6 +3,14 @@
 > *"Vos idées à la con sont intéressantes."*
 
 ## Mantra
+ 
+## Branche `coral`
+
+La branche `coral` ajoute un pack d'orchestration sous `orchestration/coral/`.
+Ce pack ne pretend pas que DELIRIUM.AI soit deja livre en phase 6. Il
+materialise un workspace Coral prive, force des agents Codex `gpt-5.4` en
+`xhigh`, et ajoute un grader hybride pour pousser le prototype actuel vers un
+milestone produit plus realiste: `Delirium Core`.
 
 *"Apprendre à l'autre est une découverte."*
 
