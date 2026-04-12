@@ -148,7 +148,10 @@ class Delirium:
         console.print()
         response = self._stream_response(s1_prompt, messages)
 
-        emb_user = self.embedder.embed(user_message)
+        # Enrich with URL content before embedding (repos, papers, sites)
+        from src.import_.enricher import enrich_text
+        enriched = enrich_text(user_message)
+        emb_user = self.embedder.embed(enriched)
         fragment_id = self.episodic.store(
             user_message, response, self.session_id, state, embedding=emb_user
         )
@@ -258,7 +261,9 @@ class Delirium:
         with console.status(f"Import {source}... 0/{len(messages)}") as status:
             for i, msg in enumerate(messages):
                 syco_score = detector.score(msg.assistant_response, msg.user_input)
-                emb = self.embedder.embed(msg.user_input)
+                from src.import_.enricher import enrich_text
+                enriched = enrich_text(msg.user_input)
+                emb = self.embedder.embed(enriched)
                 self.episodic.store(
                     user_message=msg.user_input,
                     response=msg.assistant_response,
