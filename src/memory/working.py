@@ -1,7 +1,7 @@
 """Working Memory — Layer 1. Composes the S1 prompt with context.
 
 See ARCHITECTURE_HARNESS.md section 3.6.
-Assembles: base prompt + persona state + retrieved memories + themes.
+Assembles: base prompt + persona state + retrieved memories + themes + collision.
 """
 
 from src.config import get_s1_prompt
@@ -13,7 +13,8 @@ class WorkingMemory:
 
     def compose_s1_prompt(self, persona_state: PersonaState,
                           relevant_memories: list[dict],
-                          active_themes: list[dict]) -> str:
+                          active_themes: list[dict],
+                          pending_collision: dict | None = None) -> str:
         base_prompt = get_s1_prompt()
 
         sections = [base_prompt]
@@ -42,5 +43,20 @@ Empathie : {persona_state.empathy:.2f}""")
             sections.append(
                 "═══ THÈMES ACTIFS ═══\n" + "\n".join(theme_lines)
             )
+
+        # Cold Weaver collision injection (max 1 per session — invariant 6)
+        if pending_collision:
+            a_summary = pending_collision.get("a_input", "")[:150]
+            b_summary = pending_collision.get("b_input", "")[:150]
+            connection = pending_collision.get("connection", "")
+            sections.append(f"""
+═══ COLLISION COLD WEAVER (injection latérale — max 1/session) ═══
+Tu as trouvé une connexion entre deux idées de l'utilisateur :
+- Idée A : {a_summary}
+- Idée B : {b_summary}
+- Connexion possible : {connection}
+
+Intègre ça dans la conversation de manière naturelle.
+"Rien à voir mais..." est ton format. Pas de cours, pas de tutorat.""")
 
         return "\n\n".join(sections)

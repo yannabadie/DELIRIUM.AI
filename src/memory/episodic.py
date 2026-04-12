@@ -1,7 +1,7 @@
 """Episodic Memory — Layer 2. SQLite storage for conversation fragments.
 
 See ARCHITECTURE_HARNESS.md section 3.3.
-Prototype: no vector DB, uses SQLite FTS5 for text search.
+Phase 2: adds embedding storage, source tracking, collision support.
 """
 
 import json
@@ -10,6 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+import numpy as np
+
+from src.embeddings import embedding_to_bytes, bytes_to_embedding, cosine_similarity
 from src.persona.state import PersonaState
 
 
@@ -30,8 +33,11 @@ class EpisodicMemory:
                 timestamp TEXT NOT NULL,
                 user_input TEXT NOT NULL,
                 s1_response TEXT NOT NULL,
+                source TEXT DEFAULT 'delirium',
                 h_value REAL DEFAULT 0.0,
-                phase TEXT DEFAULT 'probing'
+                phase TEXT DEFAULT 'probing',
+                embedding BLOB,
+                sycophancy_score REAL
             );
 
             CREATE TABLE IF NOT EXISTS execution_logs (
@@ -55,21 +61,47 @@ class EpisodicMemory:
                 timestamp TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS collisions (
+                id TEXT PRIMARY KEY,
+                fragment_a_id TEXT NOT NULL,
+                fragment_b_id TEXT NOT NULL,
+                collision_score REAL NOT NULL,
+                connection TEXT,
+                delivered INTEGER DEFAULT 0,
+                delivered_session TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (fragment_a_id) REFERENCES conversations(id),
+                FOREIGN KEY (fragment_b_id) REFERENCES conversations(id)
+            );
+
             CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts
                 USING fts5(user_input, s1_response, content=conversations, content_rowid=rowid);
         """)
+        # Migrate: add columns if they don't exist (for DBs created in Phase 1)
+        for col, typedef in [("source", "TEXT DEFAULT 'delirium'"),
+                             ("embedding", "BLOB"),
+                             ("sycophancy_score", "REAL")]:
+            try:
+                self.conn.execute(f"ALTER TABLE conversations ADD COLUMN {col} {typedef}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self.conn.commit()
 
     def store(self, user_message: str, response: str, session_id: str,
-              persona_state: PersonaState) -> str:
+              persona_state: PersonaState, source: str = "delirium",
+              embedding: np.ndarray | None = None,
+              sycophancy_score: float | None = None) -> str:
         fragment_id = str(uuid4())
         now = datetime.now().isoformat()
 
+        emb_bytes = embedding_to_bytes(embedding) if embedding is not None else None
+
         self.conn.execute(
-            "INSERT INTO conversations (id, session_id, timestamp, user_input, s1_response, h_value, phase) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO conversations "
+            "(id, session_id, timestamp, user_input, s1_response, source, h_value, phase, embedding, sycophancy_score) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (fragment_id, session_id, now, user_message, response,
-             persona_state.H, persona_state.phase)
+             source, persona_state.H, persona_state.phase, emb_bytes, sycophancy_score)
         )
         # Update FTS index
         self.conn.execute(
@@ -86,10 +118,24 @@ class EpisodicMemory:
         self.conn.commit()
         return fragment_id
 
+    def update_embedding(self, fragment_id: str, embedding: np.ndarray):
+        self.conn.execute(
+            "UPDATE conversations SET embedding = ? WHERE id = ?",
+            (embedding_to_bytes(embedding), fragment_id)
+        )
+        self.conn.commit()
+
+    def update_sycophancy_score(self, fragment_id: str, score: float):
+        self.conn.execute(
+            "UPDATE conversations SET sycophancy_score = ? WHERE id = ?",
+            (score, fragment_id)
+        )
+        self.conn.commit()
+
     def search(self, query: str, n_results: int = 5) -> list[dict]:
         """Search past conversations by text similarity (FTS5)."""
         rows = self.conn.execute(
-            "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase "
+            "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, c.source "
             "FROM conversations_fts f "
             "JOIN conversations c ON c.rowid = f.rowid "
             "WHERE conversations_fts MATCH ? "
@@ -97,6 +143,19 @@ class EpisodicMemory:
             (query, n_results)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_all_with_embeddings(self) -> list[dict]:
+        """Get all fragments that have embeddings (for Cold Weaver)."""
+        rows = self.conn.execute(
+            "SELECT id, user_input, s1_response, source, timestamp, embedding "
+            "FROM conversations WHERE embedding IS NOT NULL"
+        ).fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["embedding"] = bytes_to_embedding(d["embedding"])
+            results.append(d)
+        return results
 
     def get_recent(self, session_id: str, limit: int = 20) -> list[dict]:
         """Get recent messages from the current session as chat format."""
@@ -121,6 +180,70 @@ class EpisodicMemory:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM sessions").fetchone()
         return row["cnt"]
 
+    def get_fragment_count(self, source: str | None = None) -> int:
+        if source:
+            row = self.conn.execute(
+                "SELECT COUNT(*) as cnt FROM conversations WHERE source = ?", (source,)
+            ).fetchone()
+        else:
+            row = self.conn.execute("SELECT COUNT(*) as cnt FROM conversations").fetchone()
+        return row["cnt"]
+
+    # --- Collisions ---
+
+    def store_collision(self, fragment_a_id: str, fragment_b_id: str,
+                        score: float, connection: str) -> str:
+        collision_id = str(uuid4())
+        self.conn.execute(
+            "INSERT INTO collisions (id, fragment_a_id, fragment_b_id, collision_score, connection, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (collision_id, fragment_a_id, fragment_b_id, score, connection,
+             datetime.now().isoformat())
+        )
+        self.conn.commit()
+        return collision_id
+
+    def get_pending_collision(self) -> dict | None:
+        """Get the best undelivered collision."""
+        row = self.conn.execute(
+            "SELECT co.id, co.fragment_a_id, co.fragment_b_id, co.collision_score, co.connection, "
+            "ca.user_input as a_input, cb.user_input as b_input "
+            "FROM collisions co "
+            "JOIN conversations ca ON ca.id = co.fragment_a_id "
+            "JOIN conversations cb ON cb.id = co.fragment_b_id "
+            "WHERE co.delivered = 0 "
+            "ORDER BY co.collision_score DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def mark_collision_delivered(self, collision_id: str, session_id: str):
+        self.conn.execute(
+            "UPDATE collisions SET delivered = 1, delivered_session = ? WHERE id = ?",
+            (session_id, collision_id)
+        )
+        self.conn.commit()
+
+    def collision_already_exists(self, frag_a: str, frag_b: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM collisions WHERE "
+            "(fragment_a_id = ? AND fragment_b_id = ?) OR "
+            "(fragment_a_id = ? AND fragment_b_id = ?)",
+            (frag_a, frag_b, frag_b, frag_a)
+        ).fetchone()
+        return row is not None
+
+    def collision_delivered_this_session(self, session_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM collisions WHERE delivered_session = ?", (session_id,)
+        ).fetchone()
+        return row is not None
+
+    def get_collision_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM collisions").fetchone()
+        return row["cnt"]
+
+    # --- Logging ---
+
     def log_execution(self, fragment_id: str | None, log_type: str, content: dict):
         self.conn.execute(
             "INSERT INTO execution_logs (id, fragment_id, log_type, content, timestamp) "
@@ -129,6 +252,8 @@ class EpisodicMemory:
              datetime.now().isoformat())
         )
         self.conn.commit()
+
+    # --- Persona persistence ---
 
     def save_persona_state(self, state: PersonaState):
         self.conn.execute(
