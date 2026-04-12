@@ -1,7 +1,12 @@
-"""Collision scoring — SerenQA-inspired (Relevance x Novelty x Surprise).
+"""Collision scoring — Surprise x Relevance (SerenQA-inspired).
 
-See ARCHITECTURE_HARNESS.md and 04_FORMALISME/SCORE_FANFARONADE.md.
+Novelty removed: midpoint-based novelty is broken for dense corpora (N>500).
+The surprise sweet spot [0.3, 0.7] already ensures non-trivial connections.
+
+See ARCHITECTURE_HARNESS.md and PROMPT_CLAUDE_CODE_FIX_SCORING.md.
 """
+
+import re
 
 import numpy as np
 from src.embeddings import cosine_similarity
@@ -12,7 +17,28 @@ SURPRISE_LOW = 0.3
 SURPRISE_HIGH = 0.7
 
 # Minimum score to deliver a collision
-DELIVERY_THRESHOLD = 0.6
+DELIVERY_THRESHOLD = 0.5
+
+# Minimum message length (chars) to be considered for collisions
+MIN_MESSAGE_LENGTH = 30
+
+# Procedural messages to exclude
+_PROCEDURAL_RE = re.compile(
+    r"^(?:bonjour|salut|hello|hi|merci|thanks|ok|d'accord|oui|non|"
+    r"voilà|c'est bon|parfait|super|génial|bien reçu|"
+    r"compris|entendu|noté|bonne journée|à bientôt|au revoir|bye)[\s.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def is_substantive(text: str) -> bool:
+    """Check if a message contains a substantive idea (not just procedural noise)."""
+    text = text.strip()
+    if len(text) < MIN_MESSAGE_LENGTH:
+        return False
+    if _PROCEDURAL_RE.match(text):
+        return False
+    return True
 
 
 def score_surprise(sim: float) -> float:
@@ -30,36 +56,20 @@ def score_surprise(sim: float) -> float:
     return 1.0 - abs(sim - midpoint) / half_width
 
 
-def score_novelty(combined_embedding: np.ndarray,
-                  all_embeddings: list[np.ndarray],
-                  threshold: float = 0.8) -> float:
-    """Novelty: is this combination new? High if no existing fragment is close.
-
-    If any existing fragment has cosine > threshold with the combined embedding,
-    the combination is not novel.
-    """
-    if not all_embeddings:
-        return 1.0
-
-    max_sim = 0.0
-    for emb in all_embeddings:
-        sim = cosine_similarity(combined_embedding, emb)
-        max_sim = max(max_sim, sim)
-
-    if max_sim > threshold:
-        return 0.0
-    # Linear decay: novelty drops as similarity approaches threshold
-    return 1.0 - (max_sim / threshold)
-
-
-def score_relevance(embedding_a: np.ndarray, embedding_b: np.ndarray,
+def score_relevance(text_a: str, text_b: str,
+                    embedding_a: np.ndarray, embedding_b: np.ndarray,
                     theme_embeddings: list[np.ndarray]) -> float:
-    """Relevance: do both fragments relate to an active theme?
+    """Relevance: are both fragments substantive and thematically connected?
 
-    At least one shared theme with cosine > 0.5 = relevant.
+    Without themes: 1.0 if both messages are substantive, 0.0 otherwise.
+    With themes: boost if both relate to an active theme.
     """
+    # Filter procedural noise
+    if not is_substantive(text_a) or not is_substantive(text_b):
+        return 0.0
+
     if not theme_embeddings:
-        return 0.5  # neutral when no themes tracked yet
+        return 1.0  # no themes = trust surprise alone
 
     a_relevant = False
     b_relevant = False
@@ -73,14 +83,14 @@ def score_relevance(embedding_a: np.ndarray, embedding_b: np.ndarray,
             return 1.0
 
     if a_relevant or b_relevant:
-        return 0.5
-    return 0.2
+        return 0.7
+    return 0.5  # still relevant if substantive, just not theme-matched
 
 
 def collision_score(embedding_a: np.ndarray, embedding_b: np.ndarray,
-                    all_embeddings: list[np.ndarray],
+                    text_a: str, text_b: str,
                     theme_embeddings: list[np.ndarray]) -> float:
-    """Full collision score = Relevance x Novelty x Surprise.
+    """Collision score = Surprise x Relevance.
 
     Returns [0, 1]. Deliver if > DELIVERY_THRESHOLD.
     """
@@ -88,15 +98,11 @@ def collision_score(embedding_a: np.ndarray, embedding_b: np.ndarray,
 
     surprise = score_surprise(sim)
     if surprise == 0.0:
-        return 0.0  # early exit: outside sweet spot
+        return 0.0
 
-    # Combined embedding = average of A and B (represents the collision)
-    combined = (embedding_a + embedding_b) / 2.0
-    norm = np.linalg.norm(combined)
-    if norm > 0:
-        combined = combined / norm
+    relevance = score_relevance(text_a, text_b, embedding_a, embedding_b,
+                                theme_embeddings)
+    if relevance == 0.0:
+        return 0.0
 
-    novelty = score_novelty(combined, all_embeddings)
-    relevance = score_relevance(embedding_a, embedding_b, theme_embeddings)
-
-    return relevance * novelty * surprise
+    return surprise * relevance

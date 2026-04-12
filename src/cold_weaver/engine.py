@@ -8,13 +8,14 @@ See ARCHITECTURE_HARNESS.md section on Cold Weaver.
 """
 
 import logging
+import random
 from itertools import combinations
 
 import numpy as np
 
-from src.cold_weaver.scoring import collision_score, DELIVERY_THRESHOLD
-from src.cold_weaver.sources import ArxivSource, ExternalFragment
-from src.embeddings import get_embedder, cosine_similarity, embedding_to_bytes
+from src.cold_weaver.scoring import collision_score, DELIVERY_THRESHOLD, is_substantive
+from src.cold_weaver.sources import ArxivSource
+from src.embeddings import get_embedder
 from src.llm_client import LLMClient
 from src.memory.episodic import EpisodicMemory
 from src.memory.semantic import SemanticMemory
@@ -39,29 +40,27 @@ class ColdWeaverEngine:
         """Run a full collision scan. Returns number of new collisions found."""
         logger.info("Cold Weaver scan starting...")
 
-        # Embed any fragments that don't have embeddings yet
         self._embed_missing()
 
-        # Optionally fetch ArXiv and store as fragments
         if include_arxiv:
             self._fetch_and_store_arxiv()
 
-        # Get all embedded fragments
-        fragments = self.episodic.get_all_with_embeddings()
+        # Get all embedded fragments, pre-filter noise
+        all_fragments = self.episodic.get_all_with_embeddings()
+        fragments = [f for f in all_fragments if is_substantive(f["user_input"])]
+        logger.info("Fragments: %d total, %d substantive (filtered %d noise)",
+                     len(all_fragments), len(fragments), len(all_fragments) - len(fragments))
+
         if len(fragments) < 2:
-            logger.info("Not enough embedded fragments for collision detection (%d)", len(fragments))
             return 0
 
-        # Get theme embeddings for relevance scoring
+        # Theme embeddings for relevance scoring
         themes = self.semantic.get_active_themes(threshold=0.1)
         theme_embeddings = []
         if themes:
-            theme_texts = [t["label"] for t in themes]
-            theme_embeddings = [self.embedder.embed(t) for t in theme_texts]
+            theme_embeddings = [self.embedder.embed(t["label"]) for t in themes]
 
-        all_embeddings = [f["embedding"] for f in fragments]
-
-        # Score all cross-source pairs (or distant same-source pairs)
+        # Score candidate pairs
         new_collisions = 0
         candidates = self._generate_candidates(fragments)
 
@@ -71,11 +70,11 @@ class ColdWeaverEngine:
 
             score = collision_score(
                 frag_a["embedding"], frag_b["embedding"],
-                all_embeddings, theme_embeddings
+                frag_a["user_input"], frag_b["user_input"],
+                theme_embeddings,
             )
 
             if score >= DELIVERY_THRESHOLD:
-                # Generate the connection description via LLM
                 connection = self._generate_connection(frag_a, frag_b)
 
                 self.episodic.store_collision(
@@ -88,7 +87,7 @@ class ColdWeaverEngine:
                     "connection": connection,
                 })
                 new_collisions += 1
-                logger.info("Collision found (%.2f): %s <-> %s",
+                logger.info("Collision (%.2f): %s <-> %s",
                             score, frag_a["user_input"][:50], frag_b["user_input"][:50])
 
         logger.info("Cold Weaver scan complete: %d new collisions", new_collisions)
@@ -97,26 +96,39 @@ class ColdWeaverEngine:
     def _generate_candidates(self, fragments: list[dict]):
         """Generate candidate pairs for collision scoring.
 
-        Prioritizes: cross-source pairs > temporally distant same-source pairs.
-        Limits total pairs to avoid O(n^2) explosion.
+        Prioritizes cross-source, then temporally distant same-source pairs.
         """
-        MAX_PAIRS = 500
+        MAX_PAIRS = 1000
 
         cross_source = []
-        same_source = []
+        sorted_frags = sorted(fragments, key=lambda f: f.get("timestamp", ""))
+        n = len(sorted_frags)
 
         for a, b in combinations(fragments, 2):
             if a["source"] != b["source"]:
                 cross_source.append((a, b))
-            else:
-                same_source.append((a, b))
 
-        # Cross-source first, then same-source up to the limit
-        candidates = cross_source[:MAX_PAIRS]
-        remaining = MAX_PAIRS - len(candidates)
-        if remaining > 0:
-            candidates.extend(same_source[:remaining])
+        # Same-source: pair fragments that are temporally distant
+        same_source_distant = []
+        stride = max(1, n // 20)
+        for i in range(n):
+            for j in range(i + stride, n, max(1, n // 50)):
+                if len(same_source_distant) >= MAX_PAIRS * 2:
+                    break
+                same_source_distant.append((sorted_frags[i], sorted_frags[j]))
+            if len(same_source_distant) >= MAX_PAIRS * 2:
+                break
 
+        random.shuffle(same_source_distant)
+
+        # Mix cross-source and same-source
+        half = MAX_PAIRS // 2
+        candidates = cross_source[:half]
+        candidates.extend(same_source_distant[:MAX_PAIRS - len(candidates)])
+
+        logger.info("Candidates: %d (%d cross-source, %d same-source)",
+                     len(candidates), min(len(cross_source), half),
+                     len(candidates) - min(len(cross_source), half))
         return candidates
 
     def _embed_missing(self):
@@ -124,7 +136,6 @@ class ColdWeaverEngine:
         rows = self.episodic.conn.execute(
             "SELECT id, user_input FROM conversations WHERE embedding IS NULL"
         ).fetchall()
-
         if not rows:
             return
 
@@ -141,12 +152,10 @@ class ColdWeaverEngine:
             logger.info("No active themes for ArXiv fetch")
             return
 
-        theme_labels = [t["label"] for t in themes[:5]]
-        papers = self.arxiv.fetch(theme_labels)
-
+        papers = self.arxiv.fetch([t["label"] for t in themes[:5]])
         dummy_state = PersonaState()
+
         for paper in papers:
-            # Check if already stored (by title in user_input)
             existing = self.episodic.conn.execute(
                 "SELECT 1 FROM conversations WHERE user_input = ? AND source = 'arxiv'",
                 (paper.title,)
@@ -163,7 +172,6 @@ class ColdWeaverEngine:
                 source="arxiv",
                 embedding=emb,
             )
-
         logger.info("Stored %d ArXiv papers", len(papers))
 
     def _generate_connection(self, frag_a: dict, frag_b: dict) -> str:
