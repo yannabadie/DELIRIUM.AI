@@ -373,6 +373,7 @@ def main():
             try:
                 user_input = session.prompt("\nToi: ")
             except KeyboardInterrupt:
+                console.print("\n[info]Ctrl+C — tape 'quit' pour quitter[/info]")
                 continue
             except EOFError:
                 break
@@ -397,7 +398,10 @@ def main():
             elif stripped.startswith("/"):
                 console.print(f"[error]Commande inconnue: {stripped}[/error]")
             else:
-                delirium.process_message(user_input)
+                try:
+                    delirium.process_message(user_input)
+                except KeyboardInterrupt:
+                    console.print("\n[info]Interrompu.[/info]")
 
     except KeyboardInterrupt:
         pass

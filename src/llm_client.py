@@ -58,9 +58,17 @@ class LLMClient:
             token = delta.content
             if "<think>" in token:
                 in_think = True
+                # Keep any text before <think>
+                before = token.split("<think>")[0]
+                if before.strip():
+                    yield before
             if in_think:
                 if "</think>" in token:
                     in_think = False
+                    # Keep any text after </think>
+                    after = token.split("</think>", 1)[-1]
+                    if after.strip():
+                        yield after
                 continue
             yield token
 

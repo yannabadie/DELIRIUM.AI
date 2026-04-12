@@ -14,7 +14,7 @@ import numpy as np
 
 logger = logging.getLogger("delirium.embeddings")
 
-EMBEDDING_DIM = 384  # matches all-MiniLM-L6-v2 and our hash fallback
+EMBEDDING_DIM = 768  # matches paraphrase-multilingual-mpnet-base-v2
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -73,7 +73,7 @@ class HashEmbedder:
 class SentenceTransformerEmbedder:
     """High-quality embeddings via sentence-transformers (if installed)."""
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = "paraphrase-multilingual-mpnet-base-v2"):
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model_name)
 
@@ -84,12 +84,8 @@ class SentenceTransformerEmbedder:
         return self.model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
 
 
-def get_embedder() -> HashEmbedder | SentenceTransformerEmbedder:
-    """Get the best available embedder."""
-    try:
-        embedder = SentenceTransformerEmbedder()
-        logger.info("Using SentenceTransformer embedder (all-MiniLM-L6-v2)")
-        return embedder
-    except ImportError:
-        logger.info("sentence-transformers not installed, using HashEmbedder fallback")
-        return HashEmbedder()
+def get_embedder() -> SentenceTransformerEmbedder:
+    """Get the sentence-transformer embedder. No hash fallback."""
+    embedder = SentenceTransformerEmbedder()
+    logger.info("Using SentenceTransformer embedder (%s)", embedder.model.get_sentence_embedding_dimension())
+    return embedder
