@@ -110,4 +110,4 @@ Gap de recherche confirmé. Ancré dans la littérature sur les mesures implicit
 | L20 | Ouvert (recherche) | — |
 | L21 | **RÉSOLU** | 12/04/2026 |
 
-**7 résolus / 21 total**
+**8 résolus / 21 total + 3 décisions de design + score fanfaronade formalisé**
