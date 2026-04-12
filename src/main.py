@@ -263,6 +263,16 @@ class Delirium:
         })
         console.print(f"[success]Import terminé: {len(messages)} messages[/success]")
 
+        # Extract themes for Cold Weaver bootstrapping (cold start fix)
+        from src.import_.theme_extractor import ThemeExtractor
+        with console.status("Extraction des thèmes..."):
+            extractor = ThemeExtractor()
+            themes = extractor.extract(messages, self.llm, self.semantic)
+        if themes:
+            console.print(f"[success]Thèmes extraits: {', '.join(themes[:10])}[/success]")
+            if len(themes) > 10:
+                console.print(f"[info]  ... et {len(themes) - 10} autres[/info]")
+
     def cmd_collisions(self, purge: bool = False):
         from src.cold_weaver.engine import ColdWeaverEngine
 

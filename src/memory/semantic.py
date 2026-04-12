@@ -102,6 +102,27 @@ class SemanticMemory:
 
         self.conn.commit()
 
+    def add_or_reinforce_theme(self, label: str, weight: float):
+        """Add a theme or increase its weight if it exists."""
+        now = datetime.now().isoformat()
+        existing = self.conn.execute(
+            "SELECT id, weight FROM themes WHERE label = ?", (label,)
+        ).fetchone()
+        if existing:
+            new_weight = min(existing["weight"] + weight, 1.0)
+            self.conn.execute(
+                "UPDATE themes SET weight = ?, activation_count = activation_count + 1, "
+                "last_activated = ? WHERE id = ?",
+                (new_weight, now, existing["id"])
+            )
+        else:
+            self.conn.execute(
+                "INSERT INTO themes (id, label, weight, activation_count, last_activated, created_at) "
+                "VALUES (?, ?, ?, 1, ?, ?)",
+                (str(uuid4()), label, weight, now, now)
+            )
+        self.conn.commit()
+
     def get_active_themes(self, threshold: float = 0.3) -> list[dict]:
         rows = self.conn.execute(
             "SELECT label, weight FROM themes WHERE weight >= ? ORDER BY weight DESC",
