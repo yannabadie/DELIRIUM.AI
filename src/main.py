@@ -43,7 +43,7 @@ from src.persona.state import PersonaState
 from src.persona.retrait import compute_retrait_state, adjust_persona_for_retrait, get_retrait_context
 from src.persona.gags import GagTracker
 from src.s2.analyzer import S2Analyzer
-from src.embeddings import get_embedder
+from src.embeddings import get_embedder, cosine_similarity
 
 # Internal logger (file only, never shown to user)
 logging.basicConfig(
@@ -148,13 +148,26 @@ class Delirium:
         console.print()
         response = self._stream_response(s1_prompt, messages)
 
-        emb = self.embedder.embed(user_message)
+        emb_user = self.embedder.embed(user_message)
         fragment_id = self.episodic.store(
-            user_message, response, self.session_id, state, embedding=emb
+            user_message, response, self.session_id, state, embedding=emb_user
         )
+
+        # Embed response separately if it introduces novel concepts
+        # (surgissement non rebondi / injection latérale)
+        emb_response = self.embedder.embed(response)
+        novelty = 1.0 - float(cosine_similarity(emb_user, emb_response))
+        if novelty > 0.5:  # response is semantically distant from user message
+            from src.persona.state import PersonaState as _PS
+            self.episodic.store(
+                response, "", self.session_id, state,
+                source="delirium_novel", embedding=emb_response,
+            )
+
         self.episodic.log_execution(fragment_id, "s1_response", {
             "H": state.H, "phase": state.phase,
             "collision_injected": pending_collision is not None,
+            "response_novelty": round(novelty, 3),
         })
 
         # S2 analysis (async)
