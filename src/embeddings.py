@@ -78,10 +78,10 @@ class SentenceTransformerEmbedder:
         self.model = SentenceTransformer(model_name)
 
     def embed(self, text: str) -> np.ndarray:
-        return self.model.encode(text, normalize_embeddings=True)
+        return self.model.encode(text, normalize_embeddings=True, show_progress_bar=False)
 
     def embed_batch(self, texts: list[str]) -> np.ndarray:
-        return self.model.encode(texts, normalize_embeddings=True)
+        return self.model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
 
 
 def get_embedder() -> HashEmbedder | SentenceTransformerEmbedder:

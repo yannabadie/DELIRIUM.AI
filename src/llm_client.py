@@ -38,6 +38,32 @@ class LLMClient:
         )
         return _strip_think_tags(response.choices[0].message.content or "")
 
+    def chat_stream_iter(self, system: str, messages: list[dict],
+                         model: str | None = None):
+        """Yield cleaned tokens one by one. Caller handles display."""
+        model = model or MINIMAX_MODEL
+        full_messages = [{"role": "system", "content": system}] + messages
+
+        stream = self.client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            stream=True,
+        )
+
+        in_think = False
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            if not delta.content:
+                continue
+            token = delta.content
+            if "<think>" in token:
+                in_think = True
+            if in_think:
+                if "</think>" in token:
+                    in_think = False
+                continue
+            yield token
+
     def _chat_stream(self, messages: list[dict], model: str) -> str:
         """Stream response, printing tokens as they arrive. Returns full text."""
         stream = self.client.chat.completions.create(
@@ -51,7 +77,6 @@ class LLMClient:
             delta = chunk.choices[0].delta
             if delta.content:
                 token = delta.content
-                # Suppress <think>...</think> blocks from stream output
                 if "<think>" in token:
                     in_think = True
                 if in_think:
@@ -61,7 +86,7 @@ class LLMClient:
                     continue
                 print(token, end="", flush=True)
                 chunks.append(token)
-        print()  # newline after stream
+        print()
         return _strip_think_tags("".join(chunks))
 
 
