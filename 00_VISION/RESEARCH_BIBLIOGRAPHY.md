@@ -118,10 +118,70 @@
 - **Gap :** Aucune formalisation de la détection de posture/bravado dans les échanges humain-IA
 
 ### 5.4 Correction d'identité comme mécanisme de profilage
-- **Gap :** Aucune étude testant le mécanisme "description erronée volontaire → correction → extraction persona réelle"
+- **Gap PARTIELLEMENT COMBLÉ (12/04/2026) :** Protocole expérimental proposé. Ancré dans IAT/AMP/SMP. Voir `04_FORMALISME/ARCHETYPE_INVERSE_PROTOCOLE.md`.
+
+---
+
+## 6. Interpersonal Circumplex — Tendances Comportementales (ajout 12/04/2026)
+
+### 6.1 Leary, T. (1957)
+- **Titre :** Interpersonal Diagnosis of Personality
+- **Source :** Ronald Press
+- **Pertinence :** Modèle fondateur du circumplex interpersonnel. 2 axes (dominance/amour), 16 subdivisions. Base formelle pour la détection des tendances comportementales dans Delirium.
+
+### 6.2 Wiggins, J.S. (1979)
+- **Titre :** A psychological taxonomy of trait-descriptive terms
+- **Source :** J. Personality and Social Psychology, 37, 395-412
+- **Pertinence :** Raffinement du circumplex en 8 octants équidistants (IAS). Taxonomie la plus validée pour les traits interpersonnels. Utilisé comme base de l'IPCTracker dans Delirium.
+
+### 6.3 Pincus, A.L. & Ansell, E.B. (2003)
+- **Titre :** Interpersonal Theory of Personality
+- **Source :** Handbook of Psychology (Millon & Lerner)
+- **Pertinence :** Théorie contemporaine intégrative. Le principe de complémentarité (dominance pull soumission, chaleur pull chaleur) est directement applicable à la persona de Delirium.
+
+---
+
+## 7. Détection de Défensivité et Résistance (ajout 12/04/2026)
+
+### 7.1 PsyFIRE + RECAP (2026)
+- **Titre :** RECAP: Resistance Capture in Text-based Mental Health Counseling with Large Language Models
+- **Source :** arXiv:2601.14780
+- **Pertinence CRITIQUE :** Framework 13 comportements de résistance fine dans le texte. Classifieur RECAP : 91.25% F1 collaboration/résistance, 66.58% macro-F1 catégories fines. Base directe pour le score de défensivité du S2.
+
+### 7.2 Ridgway, W.A. et al. (2024)
+- **Titre :** Unmasking Verbal Defensiveness: The Role of Psychological Threat in Sentence Completion Tests
+- **Source :** J. Personality Assessment
+- **Pertinence :** 6 marqueurs de défensivité verbale identifiés (omissions ρ=.28, déni ρ=.46, commentaires méta ρ=.37, réponses désinvoltes ρ=.42). Base pour la détection mode ouvert/défensif.
+
+### 7.3 Picano, J.J. & Roland, R.R. (2003)
+- **Titre :** Scoring system for verbal defensiveness on sentence completion tests
+- **Pertinence :** Système de scoring originel, ICC = .95. Base méthodologique.
+
+---
+
+## 8. Companion AI — Game Design (ajout 12/04/2026)
+
+### 8.1 Bouquet, E. et al. (2018)
+- **Titre :** Exploring the Design of Companions in Video Games
+- **Source :** MindTrek Conference, LMU Munich
+- **Pertinence :** Framework de design de compagnons vidéoludiques. Analyse des dimensions : apparence, individualité, obligations, communication. Base pour l'extraction des 8 patterns companion AI appliqués à Delirium.
+
+### 8.2 Ochs, M., Sabouret, N. & Corruble, V. (2009)
+- **Titre :** Simulation of the dynamics of nonplayer characters’ emotions and social relations in games
+- **Source :** IEEE Trans. Computational Intelligence and AI in Games, 1(4), 281-297
+- **Pertinence :** Modèle formel des dynamiques émotionnelles et relationnelles des NPC. Applicable au vecteur Persona(T) de Delirium.
+
+---
+
+## 9. Auto-évaluation et Biais (ajout 12/04/2026)
+
+### 9.1 Connelly, B.S. & Ones, D.S. (2010)
+- **Titre :** An other perspective on personality: Meta-analytic integration of observers’ accuracy and predictive validity
+- **Source :** Psychological Bulletin
+- **Pertinence :** Corrélation auto/tiers ≈ r = .50. Justifie le choix de mesures implicites (archétype inversé) plutôt que questionnaires pour l'onboarding.
 
 ---
 
 ## Note méthodologique
 
-Cette bibliographie a été constituée le 11 avril 2026 via recherche web. Elle couvre les domaines principaux mais n'est pas exhaustive. Les gaps identifiés (section 5) constituent des opportunités de publication académique pour le projet Delirium AI, potentiellement en lien avec le cadre OIDA (Abadie, 2026).
+Cette bibliographie a été enrichie le 12 avril 2026 avec les sources trouvées lors de la résolution des lièvres L6 (défensivité), L7 (IPC), L19 (archétype inversé) et L21 (companion AI).
