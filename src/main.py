@@ -270,13 +270,17 @@ class Delirium:
         })
         print(f"\033[32m  Import terminé: {imported} messages\033[0m")
 
-    def cmd_collisions(self):
+    def cmd_collisions(self, purge: bool = False):
         """Run a Cold Weaver collision scan."""
         from src.cold_weaver.engine import ColdWeaverEngine
 
+        if purge:
+            deleted = self.episodic.purge_collisions()
+            print(f"\033[2m  Purgé {deleted} collisions\033[0m")
+
         engine = ColdWeaverEngine(self.episodic, self.semantic, self.llm)
-        print("\033[2mCold Weaver scan en cours...\033[0m")
-        n = engine.scan(include_arxiv=False)
+        print("\033[2mCold Weaver scan en cours (ArXiv activé, filtre qualité LLM)...\033[0m")
+        n = engine.scan(include_arxiv=True)
         print(f"\033[32m  {n} nouvelles collisions détectées\033[0m")
 
         total = self.episodic.get_collision_count()
@@ -358,7 +362,7 @@ def main():
     print("\033[1m║              intéressantes.\"          ║\033[0m")
     print("\033[1m╚══════════════════════════════════════╝\033[0m")
     print("\033[2m(Ctrl+C ou 'quit' pour quitter)\033[0m")
-    print("\033[2mCommandes: /import chatgpt|claude|generic <path>, /collisions, /status\033[0m\n")
+    print("\033[2mCommandes: /import chatgpt|claude|generic <path>, /collisions [--purge], /status\033[0m\n")
 
     delirium = Delirium()
 
@@ -385,13 +389,13 @@ def main():
                 delirium.cmd_import_claude(stripped[len("/import claude "):].strip())
             elif stripped.startswith("/import generic "):
                 delirium.cmd_import_generic(stripped[len("/import generic "):].strip())
-            elif stripped == "/collisions":
-                delirium.cmd_collisions()
+            elif stripped in ("/collisions", "/collisions --purge"):
+                delirium.cmd_collisions(purge="--purge" in stripped)
             elif stripped == "/status":
                 delirium.cmd_status()
             elif stripped.startswith("/"):
                 print(f"\033[31mCommande inconnue: {stripped}\033[0m")
-                print("\033[2mCommandes: /import chatgpt|claude|generic <path>, /collisions, /status\033[0m")
+                print("\033[2mCommandes: /import chatgpt|claude|generic <path>, /collisions [--purge], /status\033[0m")
             else:
                 delirium.process_message(user_input)
 

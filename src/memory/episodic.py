@@ -150,10 +150,18 @@ class EpisodicMemory:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def purge_collisions(self) -> int:
+        """Delete all collisions. Returns count deleted."""
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM collisions").fetchone()
+        count = row["cnt"]
+        self.conn.execute("DELETE FROM collisions")
+        self.conn.commit()
+        return count
+
     def get_all_with_embeddings(self) -> list[dict]:
         """Get all fragments that have embeddings (for Cold Weaver)."""
         rows = self.conn.execute(
-            "SELECT id, user_input, s1_response, source, timestamp, embedding "
+            "SELECT id, user_input, s1_response, source, session_id, timestamp, embedding "
             "FROM conversations WHERE embedding IS NOT NULL"
         ).fetchall()
         results = []
