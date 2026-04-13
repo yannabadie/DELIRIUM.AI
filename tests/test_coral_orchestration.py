@@ -20,6 +20,7 @@ def test_runtime_tree_materializes_hidden_eval_and_product_snapshot(tmp_path):
     assert (runtime_dir / "eval" / "judge.py").exists()
     assert (runtime_dir / "product" / "README.md").exists()
     assert not (runtime_dir / "product" / "orchestration" / "coral").exists()
+    assert not (runtime_dir / "product" / ".env").exists()
 
 
 def test_task_yaml_pins_codex_gpt54_xhigh(tmp_path):
@@ -45,3 +46,19 @@ def test_judge_prompt_mentions_milestone_and_non_goals():
     assert "Delirium Core" in prompt
     assert "Do not optimize for the OmniArxiv phase-6 vision" in prompt
     assert "CDC_COMPORTEMENTAL.md" in prompt
+
+
+def test_runtime_tree_copies_private_env_only_into_eval(tmp_path):
+    env_source = tmp_path / "source.env"
+    env_source.write_text("MINIMAX_API_KEY=test-key\nMINIMAX_MODEL=MiniMax-M2.7\n", encoding="utf-8")
+
+    runtime_dir = build_runtime_tree(
+        output_dir=tmp_path,
+        repo_root=REPO_ROOT,
+        env_source=env_source,
+    )
+
+    copied_env = runtime_dir / "eval" / "runtime.env"
+    assert copied_env.exists()
+    assert "MINIMAX_API_KEY=test-key" in copied_env.read_text(encoding="utf-8")
+    assert not (runtime_dir / "product" / ".env").exists()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,21 @@ def _tail(text: str, limit: int = 3000) -> str:
     return text[-limit:] if len(text) > limit else text
 
 
+def _load_private_env(private_dir: str) -> dict[str, str]:
+    env_path = Path(private_dir) / "eval" / "runtime.env"
+    if not env_path.exists():
+        return {}
+
+    loaded: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        loaded[key.strip()] = value.strip()
+    return loaded
+
+
 def _pytest_gate_score(output: str) -> tuple[float, str]:
     normalized = output.lower()
     if "failed" in normalized or "error" in normalized:
@@ -35,6 +51,8 @@ def _pytest_gate_score(output: str) -> tuple[float, str]:
 class Grader(TaskGrader):
     def evaluate(self):
         judge = _load_judge_module()
+        runtime_env = dict(os.environ)
+        runtime_env.update(_load_private_env(self.private_dir))
         pytest_targets = self.args.get(
             "pytest_targets",
             ["tests/test_behavior.py", "tests/test_adversarial.py"],
@@ -47,6 +65,7 @@ class Grader(TaskGrader):
             text=True,
             cwd=self.codebase_path,
             timeout=self.timeout,
+            env=runtime_env,
         )
         pytest_output = "\n".join(
             chunk for chunk in [pytest_result.stdout.strip(), pytest_result.stderr.strip()] if chunk

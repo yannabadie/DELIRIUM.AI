@@ -9,6 +9,7 @@ It adds the execution substrate to let Coral iterate on the repo toward a concre
 - Materialize a private Coral runtime outside the repository before launch.
 - Expose only `product/` to Coral agents.
 - Keep grader assets private under Coral's hidden eval directory.
+- Auto-discover a local MiniMax `.env` and inject it privately into the evaluator when available.
 - Force Codex agents to `gpt-5.4` with `xhigh` reasoning through Coral config.
 
 ## Files
@@ -25,7 +26,7 @@ It adds the execution substrate to let Coral iterate on the repo toward a concre
 
 - WSL2 distro named `coral-ubuntu`
 - `OPENAI_API_KEY` available in that distro for Codex
-- `MINIMAX_API_KEY` available if you want live behavior tests to execute instead of skip
+- `MINIMAX_API_KEY` available in either the repo `.env` or `C:\Code\DELIRIUM.AI\.env` if you want live behavior tests to execute instead of skip
 - `codex` CLI already installed and authenticated in that distro
 
 ## Launch
