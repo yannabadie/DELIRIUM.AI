@@ -31,6 +31,10 @@ def test_task_yaml_pins_codex_gpt54_xhigh(tmp_path):
     assert "model: gpt-5.4" in task_yaml
     assert "model_reasoning_effort: xhigh" in task_yaml
     assert 'repo_path: "./product"' in task_yaml
+    assert '- "python3 -m venv .venv"' in task_yaml
+    assert '- ".venv/bin/python -m pip install --upgrade pip"' in task_yaml
+    assert '- ".venv/bin/pip install -r requirements.txt"' in task_yaml
+    assert 'python3 -m pip install --upgrade pip' not in task_yaml
 
 
 def test_canonical_sources_include_behavior_and_mvp():

@@ -104,49 +104,7 @@ def _copy_private_runtime_env(
 
 
 def _render_task_yaml() -> str:
-    return """task:
-  name: "DELIRIUM.AI Productization"
-  description: |
-    Productize DELIRIUM.AI toward a local-first Delirium Core milestone.
-    The behavioral source of truth is 01_CAHIER_DES_CHARGES/CDC_COMPORTEMENTAL.md.
-    README.md is stale where it still says there is no code and no prototype.
-  tips: |
-    - Prioritize Delirium Core over OmniArxiv.
-    - Respect CDC_COMPORTEMENTAL.md before any other behavior document.
-    - Do not invent undocumented product decisions.
-    - Favor working software, tests, and docs over speculative rewrites.
-
-grader:
-  timeout: 900
-  direction: maximize
-  args:
-    milestone: "Delirium Core"
-    judge_model: "gpt-5.4"
-    judge_reasoning_effort: "xhigh"
-    judge_timeout: 300
-    pytest_targets:
-      - "tests/test_behavior.py"
-      - "tests/test_adversarial.py"
-
-agents:
-  count: 3
-  runtime: codex
-  model: gpt-5.4
-  runtime_options:
-    model_reasoning_effort: xhigh
-
-workspace:
-  results_dir: "./results"
-  repo_path: "./product"
-  setup:
-    - "python3 -m pip install --upgrade pip"
-    - "python3 -m pip install -r requirements.txt"
-
-run:
-  verbose: false
-  ui: false
-  session: tmux
-"""
+    return (THIS_DIR / "task.template.yaml").read_text(encoding="utf-8")
 
 
 def _write_runtime_readme(runtime_dir: Path) -> None:
