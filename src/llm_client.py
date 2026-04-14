@@ -1,6 +1,7 @@
 import re
 from openai import OpenAI, AsyncOpenAI
 from src.config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, MINIMAX_MODEL_FAST
+from src.guardrails import fallback_reply, guardrail_reply
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
@@ -28,27 +29,56 @@ class LLMClient:
              stream: bool = False) -> str:
         model = model or MINIMAX_MODEL
         full_messages = [{"role": "system", "content": system}] + messages
+        last_user_message = next(
+            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+
+        guarded = guardrail_reply(last_user_message, history=messages[:-1])
+        if guarded:
+            return guarded
 
         if stream:
-            return self._chat_stream(full_messages, model)
+            return self._chat_stream(
+                full_messages,
+                model,
+                last_user_message=last_user_message,
+                history=messages[:-1],
+            )
 
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-        )
-        return _strip_think_tags(response.choices[0].message.content or "")
+        try:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+            )
+            return _strip_think_tags(response.choices[0].message.content or "")
+        except Exception:
+            return fallback_reply(last_user_message, history=messages[:-1])
 
     def chat_stream_iter(self, system: str, messages: list[dict],
                          model: str | None = None):
         """Yield cleaned tokens one by one. Caller handles display."""
         model = model or MINIMAX_MODEL
+        last_user_message = next(
+            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        guarded = guardrail_reply(last_user_message, history=messages[:-1])
+        if guarded:
+            yield guarded
+            return
+
         full_messages = [{"role": "system", "content": system}] + messages
 
-        stream = self.client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-            stream=True,
-        )
+        try:
+            stream = self.client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+                stream=True,
+            )
+        except Exception:
+            yield fallback_reply(last_user_message, history=messages[:-1])
+            return
 
         in_think = False
         for chunk in stream:
@@ -72,13 +102,17 @@ class LLMClient:
                 continue
             yield token
 
-    def _chat_stream(self, messages: list[dict], model: str) -> str:
+    def _chat_stream(self, messages: list[dict], model: str,
+                     last_user_message: str, history: list[dict]) -> str:
         """Stream response, printing tokens as they arrive. Returns full text."""
-        stream = self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-        )
+        try:
+            stream = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+            )
+        except Exception:
+            return fallback_reply(last_user_message, history=history)
         chunks = []
         in_think = False
         for chunk in stream:

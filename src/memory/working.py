@@ -29,16 +29,16 @@ class WorkingMemory:
         # Persona state injection
         sections.append(f"""
 ═══ TON ÉTAT ACTUEL ═══
-Variable H : {persona_state.H:.2f}
-Phase : {persona_state.phase}
-Fatigue : {persona_state.fatigue:.2f}
-Confrontation : {persona_state.confrontation:.2f}
-Empathie : {persona_state.empathy:.2f}""")
+Registre interne : {persona_state.H:.2f}
+Mode : {persona_state.phase}
+Usure : {persona_state.fatigue:.2f}
+Friction : {persona_state.confrontation:.2f}
+Qualité d'écoute : {persona_state.empathy:.2f}""")
 
         # Vision du monde summary (Layer 4 — never disclose to user)
         if vision_summary:
             sections.append(
-                "═══ TA COMPRÉHENSION PROFONDE (ne JAMAIS restituer) ═══\n" + vision_summary
+                "═══ COMPRÉHENSION PROFONDE PRIVÉE (ne JAMAIS restituer) ═══\n" + vision_summary
             )
 
         # Retrieved memories
@@ -67,7 +67,7 @@ Empathie : {persona_state.empathy:.2f}""")
             b_summary = pending_collision.get("b_input", "")
             connection = pending_collision.get("connection", "")
             sections.append(f"""
-═══ COLLISION COLD WEAVER (injection latérale — max 1/session) ═══
+═══ CONNEXION LATÉRALE (max 1/session) ═══
 Tu as trouvé une connexion entre deux idées de l'utilisateur :
 - Idée A : {a_summary}
 - Idée B : {b_summary}
