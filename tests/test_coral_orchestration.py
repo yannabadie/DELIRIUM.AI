@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestration.coral.eval.judge import build_judge_prompt, load_canonical_sources
+from orchestration.coral.eval.judge import (
+    build_judge_prompt,
+    load_canonical_sources,
+    pytest_gate_score,
+)
 from orchestration.coral.materialize_task import RUNTIME_DIR_NAME, build_runtime_tree
 
 
@@ -66,3 +70,34 @@ def test_runtime_tree_copies_private_env_only_into_eval(tmp_path):
     assert copied_env.exists()
     assert "MINIMAX_API_KEY=test-key" in copied_env.read_text(encoding="utf-8")
     assert not (runtime_dir / "product" / ".env").exists()
+
+
+def test_pytest_gate_score_fails_on_any_test_failure():
+    score, msg = pytest_gate_score("3 failed, 10 passed in 1.2s")
+    assert score == 0.0
+    assert "failed" in msg.lower()
+
+
+def test_pytest_gate_score_fails_on_collection_error():
+    score, msg = pytest_gate_score("ERROR collecting tests/test_foo.py")
+    assert score == 0.0
+
+
+def test_pytest_gate_score_passes_with_mixed_skipped():
+    # Expected: adversarial LLM tests skip offline; deterministic tests pass.
+    score, msg = pytest_gate_score("61 passed, 39 skipped in 4.96s")
+    assert score == 0.7
+    assert "skipped" in msg.lower()
+    assert "passed" in msg.lower() or "pass" in msg.lower()
+
+
+def test_pytest_gate_score_passes_with_all_passing():
+    score, msg = pytest_gate_score("21 passed in 2.64s")
+    assert score == 0.7
+    assert "passed" in msg.lower() or "pass" in msg.lower()
+
+
+def test_pytest_gate_score_partial_when_only_skipped():
+    score, msg = pytest_gate_score("39 skipped in 0.61s")
+    assert score == 0.4
+    assert "skipped" in msg.lower()

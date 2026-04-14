@@ -39,14 +39,6 @@ def _load_private_env(private_dir: str) -> dict[str, str]:
     return loaded
 
 
-def _pytest_gate_score(output: str) -> tuple[float, str]:
-    normalized = output.lower()
-    if "failed" in normalized or "error" in normalized:
-        return 0.0, "Pytest gate failed."
-    if "skipped" in normalized and "passed" not in normalized:
-        return 0.4, "Behavior tests were discovered but skipped; live API evidence is missing."
-    return 0.7, "Behavior and adversarial pytest gate passed."
-
 
 class Grader(TaskGrader):
     def evaluate(self):
@@ -55,7 +47,12 @@ class Grader(TaskGrader):
         runtime_env.update(_load_private_env(self.private_dir))
         pytest_targets = self.args.get(
             "pytest_targets",
-            ["tests/test_behavior.py", "tests/test_adversarial.py"],
+            [
+                "tests/test_behavior.py",
+                "tests/test_adversarial.py",
+                "tests/test_guardrails.py",
+                "tests/test_persona_properties.py",
+            ],
         )
         timeout = int(self.args.get("judge_timeout", 300))
         pytest_cmd = ["python3", "-m", "pytest", *pytest_targets, "-q"]
@@ -75,7 +72,7 @@ class Grader(TaskGrader):
             explanation = f"Pytest gate failed.\n\n{_tail(pytest_output)}"
             return self.fail(explanation, feedback=_tail(pytest_output, limit=5000))
 
-        gate_score, gate_summary = _pytest_gate_score(pytest_output)
+        gate_score, gate_summary = judge.pytest_gate_score(pytest_output)
         judge_result = judge.run_codex_judge(
             Path(self.codebase_path),
             pytest_output,

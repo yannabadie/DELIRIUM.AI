@@ -92,6 +92,29 @@ Canonical context:
 """
 
 
+def pytest_gate_score(output: str) -> tuple[float, str]:
+    """Score the pytest gate result.
+
+    Rules:
+    - Any failed test or collection error → 0.0 (hard gate).
+    - Passed tests present → 0.7 base.
+      If adversarial tests are skipped (no API key) that is expected and does
+      not reduce the score, provided non-adversarial tests pass.
+    - No passed tests at all (only skipped) → 0.4.
+    """
+    normalized = output.lower()
+    if "error" in normalized or "failed" in normalized:
+        return 0.0, "Pytest gate failed."
+    if "passed" in normalized:
+        if "skipped" in normalized:
+            return 0.7, (
+                "Deterministic pytest gate passed; live-API adversarial tests "
+                "skipped (no API key - expected in offline evaluation)."
+            )
+        return 0.7, "All pytest suites passed."
+    return 0.4, "Tests were discovered but all skipped; live API evidence is missing."
+
+
 def extract_json_object(text: str) -> dict | None:
     match = re.search(r"\{[\s\S]*\}", text)
     if not match:
