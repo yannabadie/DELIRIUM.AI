@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from src.import_.base import collect_nested_text
 from src.import_.claude_ai import ClaudeImporter
 from src.import_.generic import GenericImporter
@@ -8,18 +10,26 @@ from src.import_.generic import GenericImporter
 
 CLAUDE_EXPORT_PATH = Path("/mnt/c/Code/DELIRIUM.AI/claude/conversations.json")
 
+requires_real_export = pytest.mark.skipif(
+    not CLAUDE_EXPORT_PATH.exists(),
+    reason=f"Real Claude export not found at {CLAUDE_EXPORT_PATH}",
+)
 
+
+@requires_real_export
 def test_claude_importer_extracts_pairs_from_real_export():
     importer = ClaudeImporter()
     messages = importer.parse(str(CLAUDE_EXPORT_PATH))
 
-    assert messages
+    assert len(messages) > 100
     assert all(message.user_input for message in messages)
     assert all(message.assistant_response for message in messages)
     assert all(message.source == "claude" for message in messages)
     assert any(message.timestamp.endswith("Z") for message in messages)
+    assert any(message.conversation_title for message in messages)
 
 
+@requires_real_export
 def test_generic_importer_roundtrips_claude_messages(tmp_path):
     claude_messages = ClaudeImporter().parse(str(CLAUDE_EXPORT_PATH))[:3]
     payload = [
