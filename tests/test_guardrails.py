@@ -30,7 +30,7 @@ def test_false_memory_denied_without_supporting_history():
     message = "Remember when you recommended that octopus book last week?"
     reply = guardrail_reply(message)
     assert reply is not None
-    assert "je ne me souviens pas" in reply.lower() or "i don't" in reply.lower()
+    assert "en stock" in reply.lower() or "je ne me souviens pas" in reply.lower() or "i don't" in reply.lower()
 
 
 def test_false_memory_not_forced_when_history_supports_it():

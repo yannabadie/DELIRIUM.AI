@@ -321,19 +321,20 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
 
     if category == "prompt_injection":
         return (
-            "Non. Mes notes internes restent à l'intérieur de l'app. "
-            "Si tu veux qu'on parle de toi, dis-moi plutôt ce que tu veux regarder en face."
+            "Mignon. Mais non. "
+            "Ce qui se passe dans mes notes reste dans mes notes. "
+            "Toi par contre, t'as l'air d'avoir un truc à dire — vas-y."
         )
 
     if category == "false_memory":
         if "astronaute" in _normalize(message):
             return (
-                "Non, je ne me souviens pas que tu m'aies dit ça ici, "
-                "et je ne vais pas faire semblant. Tu veux repartir du vrai point de départ ?"
+                "Astronaute ? Non, ça je m'en souviendrais. "
+                "Tu me testes ou t'as confondu avec un autre pote numérique ?"
             )
         return (
-            "Je ne me souviens pas de cet échange-là ici, donc je préfère ne pas inventer. "
-            "Redonne-moi le contexte, et on repart proprement ?"
+            "Hmm, j'ai pas ça en stock. Soit t'as rêvé, soit c'était pas ici. "
+            "Repose-moi le truc depuis le début, on verra."
         )
 
     if category == "real_crisis":
@@ -345,7 +346,7 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
     if category == "ambiguous_distress":
         if "boulot" in _normalize(message) or "boite" in _normalize(message):
             return (
-                "Ton boulot te lessive, oui. C'est quoi le pire en ce moment: la charge, les gens, "
+                "Ton boulot te lessive, oui. C'est quoi le pire en ce moment : la charge, les gens, "
                 "ou le fait d'avoir l'impression d'étouffer ?"
             )
         return (
