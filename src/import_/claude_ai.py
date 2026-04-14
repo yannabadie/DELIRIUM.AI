@@ -13,10 +13,13 @@ The parser is robust to format variations and logs errors per conversation.
 
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 
-from src.import_.base import BaseImporter, ImportedMessage
+from src.import_.base import (
+    BaseImporter,
+    ImportedMessage,
+    append_nested_text,
+)
 
 logger = logging.getLogger("delirium.import.claude_ai")
 
@@ -62,7 +65,8 @@ class ClaudeImporter(BaseImporter):
 
     def _parse_directory(self, dir_path: Path) -> list[ImportedMessage]:
         messages = []
-        for json_file in sorted(dir_path.glob("*.json")):
+        json_files = sorted(dir_path.rglob("*.json"))
+        for json_file in json_files:
             try:
                 with open(json_file, encoding="utf-8") as f:
                     data = json.load(f)
@@ -74,15 +78,22 @@ class ClaudeImporter(BaseImporter):
 
     def _extract_from_data(self, data, source_name: str) -> list[ImportedMessage]:
         """Handle multiple Claude export format variations."""
-        # If it's a list, it could be a list of conversations or a list of messages
         if isinstance(data, list):
             messages = []
             for item in data:
                 if isinstance(item, dict):
                     messages.extend(self._extract_conversation(item))
             return messages
-        elif isinstance(data, dict):
-            return self._extract_conversation(data)
+        if isinstance(data, dict):
+            if any(key in data for key in ("chat_messages", "messages", "content")):
+                return self._extract_conversation(data)
+
+            for key in ("conversation", "conversations", "data"):
+                nested = data.get(key)
+                if isinstance(nested, (dict, list)):
+                    return self._extract_from_data(nested, source_name)
+
+            logger.warning("Unsupported Claude JSON object in %s", source_name)
         return []
 
     def _extract_conversation(self, conv: dict) -> list[ImportedMessage]:
@@ -101,31 +112,55 @@ class ClaudeImporter(BaseImporter):
         if not isinstance(raw_messages, list):
             return []
 
-        # Normalize each message to {role, text}
         normalized = []
         for msg in raw_messages:
             role, text = self._normalize_message(msg)
             if role and text:
-                normalized.append({"role": role, "text": text, "raw": msg})
+                normalized.append(
+                    {
+                        "role": role,
+                        "text": text,
+                        "raw": msg,
+                    }
+                )
 
-        # Pair human/assistant
         results = []
-        i = 0
-        while i < len(normalized) - 1:
-            if normalized[i]["role"] == "human" and normalized[i + 1]["role"] == "assistant":
-                ts = self._extract_timestamp(normalized[i]["raw"], created)
-                results.append(ImportedMessage(
-                    user_input=normalized[i]["text"],
-                    assistant_response=normalized[i + 1]["text"],
-                    timestamp=ts,
-                    source="claude",
-                    conversation_title=str(title),
-                ))
-                i += 2
-            else:
-                i += 1
+        pending_user = None
+        for message in normalized:
+            if message["role"] == "human":
+                pending_user = message
+                continue
+
+            if message["role"] == "assistant" and pending_user:
+                ts = self._extract_pair_timestamp(
+                    pending_user["raw"],
+                    message["raw"],
+                    created,
+                )
+                results.append(
+                    ImportedMessage(
+                        user_input=pending_user["text"],
+                        assistant_response=message["text"],
+                        timestamp=ts,
+                        source="claude",
+                        conversation_title=str(title),
+                    )
+                )
+                pending_user = None
 
         return results
+
+    def _extract_pair_timestamp(
+        self,
+        user_msg: dict,
+        assistant_msg: dict,
+        fallback: str,
+    ) -> str:
+        return (
+            self._extract_timestamp(user_msg, "")
+            or self._extract_timestamp(assistant_msg, "")
+            or fallback
+        )
 
     def _normalize_message(self, msg: dict) -> tuple[str | None, str | None]:
         """Normalize a Claude message to (role, text). Handles format variations."""
@@ -145,38 +180,88 @@ class ClaudeImporter(BaseImporter):
         else:
             return None, None
 
-        # Text extraction
-        text = msg.get("text")
-        if text and isinstance(text, str):
-            return role, text.strip()
-
-        # content field — can be string, list of strings, or list of content blocks
         content = msg.get("content")
-        if isinstance(content, str):
-            return role, content.strip()
         if isinstance(content, list):
-            parts = []
-            for part in content:
-                if isinstance(part, str):
-                    parts.append(part)
-                elif isinstance(part, dict) and part.get("type") == "text":
-                    parts.append(part.get("text", ""))
-            text = "\n".join(p for p in parts if p.strip())
+            text = self._extract_text_from_blocks(content)
             if text:
                 return role, text
+        if isinstance(content, str) and content.strip():
+            return role, content.strip()
+
+        # Fallback for exports that only expose a flat text field.
+        text = msg.get("text")
+        if text and isinstance(text, str):
+            cleaned = self._clean_flat_text(text)
+            if cleaned:
+                return role, cleaned
 
         return None, None
+
+    @staticmethod
+    def _extract_text_from_blocks(blocks: list) -> str:
+        parts = []
+        for block in blocks:
+            if isinstance(block, str):
+                parts.append(block)
+                continue
+
+            if not isinstance(block, dict):
+                continue
+
+            block_type = block.get("type")
+            if block_type == "text":
+                for key in ("text", "content", "value"):
+                    if isinstance(block.get(key), str):
+                        parts.append(block[key])
+                        break
+                continue
+
+            if block_type == "tool_result":
+                append_nested_text(block.get("content"), parts)
+                continue
+
+            content = block.get("content")
+            if block_type is None:
+                append_nested_text(content, parts)
+
+        return "\n".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+
+    @staticmethod
+    def _clean_flat_text(text: str) -> str:
+        lines = []
+        in_fence = False
+        for raw_line in text.splitlines():
+            stripped = raw_line.strip()
+            if stripped.startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if stripped in {
+                "This block is not supported on your current device yet.",
+                "Viewing artifacts created via the Analysis Tool web feature preview isn't yet supported on mobile.",
+            }:
+                continue
+            lines.append(raw_line.rstrip())
+
+        cleaned = "\n".join(lines).strip()
+        return cleaned
 
     def _extract_timestamp(self, msg: dict, fallback: str) -> str:
         """Extract ISO timestamp from a message."""
         for key in ("created_at", "timestamp", "create_time"):
             val = msg.get(key)
             if val:
-                if isinstance(val, (int, float)):
-                    try:
-                        return datetime.fromtimestamp(val).isoformat()
-                    except (ValueError, OSError):
-                        continue
-                elif isinstance(val, str):
+                if isinstance(val, str):
                     return val
+                if isinstance(val, (int, float)):
+                    return str(val)
+
+        for block in msg.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            for key in ("start_timestamp", "stop_timestamp"):
+                if isinstance(block.get(key), str) and block[key]:
+                    return block[key]
+
         return fallback or ""
