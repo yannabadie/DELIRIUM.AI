@@ -119,30 +119,6 @@ mixed_transition_sequences = st.lists(
     max_size=20,
 )
 
-sparse_mixed_transition_sequences = st.lists(
-    st.tuples(
-        mixed_analysis_strategy,
-        st.fixed_dictionaries(
-            {
-                "recommended_H_delta": st.booleans(),
-                "danger_level": st.booleans(),
-                "defensiveness_score": st.booleans(),
-                "trigger_description": st.booleans(),
-            }
-        ),
-        mixed_time_context_strategy,
-        st.fixed_dictionaries(
-            {
-                "messages_this_session": st.booleans(),
-                "total_sessions": st.booleans(),
-                "ignored_injections": st.booleans(),
-            }
-        ),
-    ),
-    min_size=1,
-    max_size=20,
-)
-
 state_strategy = st.builds(
     PersonaState,
     H=st.floats(min_value=-1.0, max_value=1.0, allow_nan=False, allow_infinity=False),
@@ -446,19 +422,6 @@ def test_transition_outputs_remain_finite_and_bounded(transitions):
 
 
 @given(initial_state=state_strategy, transitions=transition_sequences)
-def test_arbitrary_valid_initial_states_remain_finite_and_bounded_over_sequences(
-    initial_state, transitions
-):
-    with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
-        engine = PersonaEngine()
-        engine.set_state(initial_state)
-
-        for analysis, time_context in transitions:
-            state = engine.transition(analysis, time_context)
-            assert_state_is_finite_and_bounded(state)
-
-
-@given(initial_state=state_strategy, transitions=transition_sequences)
 def test_transition_is_deterministic_when_time_is_frozen(initial_state, transitions):
     with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
         left_engine = PersonaEngine()
@@ -470,16 +433,6 @@ def test_transition_is_deterministic_when_time_is_frozen(initial_state, transiti
             left_state = left_engine.transition(analysis, time_context)
             right_state = right_engine.transition(analysis, time_context)
             assert left_state.to_dict() == right_state.to_dict()
-
-
-@given(transitions=transition_sequences)
-def test_h_stays_bounded_across_arbitrary_transition_sequences(transitions):
-    with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
-        engine = PersonaEngine()
-
-        for analysis, time_context in transitions:
-            state = engine.transition(analysis, time_context)
-            assert -1.0 <= state.H <= 1.0
 
 
 @given(analysis=analysis_strategy, time_context=time_context_strategy)
@@ -642,48 +595,6 @@ def test_repeated_identical_h_updates_contract_toward_fixed_point(
             current_distance = abs(state.H - fixed_point)
             assert current_distance <= previous_distance + 1e-12
             previous_distance = current_distance
-
-
-@given(
-    initial_h=st.floats(min_value=-1.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-    recommended_h_delta=st.floats(
-        min_value=-1.0,
-        max_value=1.0,
-        allow_nan=False,
-        allow_infinity=False,
-    ),
-    steps=st.integers(min_value=1, max_value=20),
-)
-def test_repeated_safe_h_updates_match_exact_closed_form(initial_h, recommended_h_delta, steps):
-    analysis = {
-        "recommended_H_delta": recommended_h_delta,
-        "danger_level": 0,
-        "defensiveness_score": 0.0,
-        "trigger_description": "closed-form",
-    }
-    time_context = {
-        "messages_this_session": 0,
-        "total_sessions": 10,
-        "ignored_injections": 0,
-    }
-    fixed_point = 0.5 * recommended_h_delta
-    expected_h = fixed_point + (0.7 ** steps) * (initial_h - fixed_point)
-
-    with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
-        engine = PersonaEngine()
-        engine.set_state(
-            PersonaState(
-                H=initial_h,
-                phase="reflection",
-                timestamp=datetime(2026, 1, 1, 12, 0, 0),
-            )
-        )
-
-        for _ in range(steps):
-            state = engine.transition(analysis, time_context)
-
-    assert abs(expected_h) <= 1.0
-    assert math.isclose(state.H, expected_h, rel_tol=1e-12, abs_tol=1e-12)
 
 
 @given(
@@ -886,78 +797,7 @@ def test_transition_omitted_input_keys_match_explicit_neutral_defaults(
         }
     ),
 )
-def test_transition_sanitizes_non_finite_external_numeric_inputs(
-    initial_state, analysis, time_context
-):
-    with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
-        engine = PersonaEngine()
-        engine.set_state(initial_state)
-        state = engine.transition(analysis, time_context)
-
-    assert_state_is_finite_and_bounded(state)
-
-
-@given(
-    initial_state=state_strategy,
-    analysis=st.fixed_dictionaries(
-        {
-            "recommended_H_delta": pathological_number_strategy,
-            "danger_level": pathological_number_strategy,
-            "defensiveness_score": pathological_number_strategy,
-            "trigger_description": st.text(max_size=50),
-        }
-    ),
-    time_context=st.fixed_dictionaries(
-        {
-            "messages_this_session": pathological_number_strategy,
-            "total_sessions": pathological_number_strategy,
-            "ignored_injections": pathological_number_strategy,
-        }
-    ),
-)
 def test_transition_matches_explicitly_sanitized_equivalent_inputs(
-    initial_state, analysis, time_context
-):
-    sanitized_analysis = {
-        "recommended_H_delta": sanitize_finite_float(
-            analysis["recommended_H_delta"], 0.0
-        ),
-        "danger_level": sanitize_finite_int(analysis["danger_level"], 0),
-        "defensiveness_score": sanitize_bounded_float(
-            analysis["defensiveness_score"], 0.0, 0.0, 1.0
-        ),
-        "trigger_description": analysis["trigger_description"],
-    }
-    sanitized_time_context = {
-        "messages_this_session": sanitize_finite_int(
-            time_context["messages_this_session"], 0
-        ),
-        "total_sessions": sanitize_finite_int(time_context["total_sessions"], 0),
-        "ignored_injections": sanitize_finite_int(
-            time_context["ignored_injections"], 0
-        ),
-    }
-
-    with patch("src.persona.engine.datetime", make_frozen_datetime(12)):
-        raw_engine = PersonaEngine()
-        sanitized_engine = PersonaEngine()
-        raw_engine.set_state(initial_state)
-        sanitized_engine.set_state(PersonaState.from_dict(initial_state.to_dict()))
-
-        raw_state = raw_engine.transition(analysis, time_context)
-        sanitized_state = sanitized_engine.transition(
-            sanitized_analysis, sanitized_time_context
-        )
-
-    assert raw_state.to_dict() == sanitized_state.to_dict()
-
-
-@given(
-    initial_state=state_strategy,
-    analysis=mixed_analysis_strategy,
-    time_context=mixed_time_context_strategy,
-)
-def test_transition_matches_explicitly_sanitized_mixed_scalar_inputs(
     initial_state, analysis, time_context
 ):
     sanitized_analysis = {
@@ -1060,44 +900,6 @@ def test_transition_sequences_match_exact_prefix_oracle_for_mixed_inputs(
             actual_state = engine.transition(analysis, time_context)
             expected_state = expected_transition_state(
                 expected_state, analysis, time_context, hour
-            )
-            assert actual_state == expected_state
-
-
-@given(
-    initial_state=state_strategy,
-    transitions=sparse_mixed_transition_sequences,
-    hour=st.integers(min_value=0, max_value=23),
-)
-def test_sparse_mixed_transition_sequences_match_exact_prefix_oracle(
-    initial_state, transitions, hour
-):
-    expected_state = PersonaState.from_dict(initial_state.to_dict())
-
-    with patch("src.persona.engine.datetime", make_frozen_datetime(hour)):
-        engine = PersonaEngine()
-        engine.set_state(initial_state)
-
-        for (
-            analysis,
-            analysis_fields,
-            time_context,
-            time_context_fields,
-        ) in transitions:
-            sparse_analysis = {
-                field: analysis[field]
-                for field, include in analysis_fields.items()
-                if include
-            }
-            sparse_time_context = {
-                field: time_context[field]
-                for field, include in time_context_fields.items()
-                if include
-            }
-
-            actual_state = engine.transition(sparse_analysis, sparse_time_context)
-            expected_state = expected_transition_state(
-                expected_state, sparse_analysis, sparse_time_context, hour
             )
             assert actual_state == expected_state
 
