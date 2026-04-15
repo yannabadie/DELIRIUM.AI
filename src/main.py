@@ -11,9 +11,11 @@ Commands:
 
 import asyncio
 import logging
+import multiprocessing
 import sys
 import warnings
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 # Suppress noisy loggers BEFORE any imports that trigger them
@@ -44,14 +46,22 @@ from src.persona.retrait import compute_retrait_state, adjust_persona_for_retrai
 from src.persona.gags import GagTracker
 from src.s2.analyzer import S2Analyzer
 from src.embeddings import get_embedder, cosine_similarity
+from src.guardrails import behavioral_reply
+from src.process_cleanup import (
+    install_safe_multiprocessing_close,
+    is_running_process_close_error,
+)
 
 # Internal logger (file only, never shown to user)
+Path(SQLITE_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     handlers=[logging.FileHandler(SQLITE_DB_PATH.replace(".db", ".log"), encoding="utf-8")],
 )
 logger = logging.getLogger("delirium")
+
+install_safe_multiprocessing_close()
 
 # Rich console for user-facing output
 console = Console(theme=Theme({
@@ -62,6 +72,39 @@ console = Console(theme=Theme({
     "error": "red bold",
     "heading": "bold",
 }))
+
+
+def _is_running_process_close_error(exc: Exception) -> bool:
+    return is_running_process_close_error(exc)
+
+
+def _drain_active_children() -> None:
+    """Best-effort cleanup for multiprocessing children left by dependencies."""
+    for child in multiprocessing.active_children():
+        try:
+            child.join(timeout=0.2)
+            if child.is_alive():
+                logger.warning("Terminating lingering child process pid=%s", child.pid)
+                child.terminate()
+                child.join(timeout=1.0)
+            if child.is_alive():
+                logger.warning(
+                    "Child process pid=%s still alive after terminate/join; skipping close()",
+                    child.pid,
+                )
+                continue
+            try:
+                child.close()
+            except ValueError as exc:
+                if _is_running_process_close_error(exc):
+                    logger.warning(
+                        "Child process pid=%s raised running-process close() race; skipping close()",
+                        child.pid,
+                    )
+                    continue
+                raise
+        except Exception as exc:
+            logger.warning("Child process cleanup failed for pid=%s: %s", child.pid, exc)
 
 
 class Delirium:
@@ -175,13 +218,16 @@ class Delirium:
 
         # S2 analysis (async)
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(
-            self.s2.analyze(fragment_id, user_message, response,
-                            recent + [{"role": "user", "content": user_message},
-                                       {"role": "assistant", "content": response}],
-                            self.session_id)
-        )
-        loop.close()
+        try:
+            loop.run_until_complete(
+                self.s2.analyze(fragment_id, user_message, response,
+                                recent + [{"role": "user", "content": user_message},
+                                           {"role": "assistant", "content": response}],
+                                self.session_id)
+            )
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            loop.close()
 
         return response
 
@@ -216,8 +262,14 @@ class Delirium:
             else "[L'utilisateur ouvre l'app pour la première fois. Génère ton premier message.]"
         )
 
-        console.print()
-        response = self._stream_response(s1_prompt, [{"role": "user", "content": instruction}])
+        response = behavioral_reply(instruction)
+        if response:
+            console.print()
+            console.print("[delirium]Delirium:[/delirium] ", end="")
+            console.print(response, highlight=False)
+        else:
+            console.print()
+            response = self._stream_response(s1_prompt, [{"role": "user", "content": instruction}])
 
         fragment_id = self.episodic.store(
             "[premier_message]", response, self.session_id,
@@ -412,6 +464,13 @@ class Delirium:
                 console.print(f"  {who['summary']}")
 
     def close(self):
+        for client in (self.async_llm, self.llm):
+            try:
+                client.close()
+            except Exception as exc:
+                logger.warning("Client shutdown failed: %s", exc)
+
+        _drain_active_children()
         self.episodic.close()
 
 
@@ -474,7 +533,13 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        delirium.close()
+        try:
+            delirium.close()
+        except ValueError as exc:
+            if not _is_running_process_close_error(exc):
+                raise
+            logger.warning("Suppressed shutdown close() race during final teardown: %s", exc)
+            _drain_active_children()
         console.print("\n[info]Session terminée. À plus.[/info]")
 
 

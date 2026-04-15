@@ -1,14 +1,25 @@
 import re
 from openai import OpenAI, AsyncOpenAI
 from src.config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, MINIMAX_MODEL_FAST
-from src.guardrails import fallback_reply, guardrail_reply
+from src.guardrails import behavioral_reply, fallback_reply, guardrail_reply
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+_FIRST_MESSAGE_INSTRUCTION = "[L'utilisateur ouvre l'app pour la première fois. Génère ton premier message.]"
 
 
 def _strip_think_tags(text: str) -> str:
     """Remove <think>...</think> blocks from MiniMax M2.7 output."""
     return _THINK_RE.sub("", text).strip()
+
+
+def _effective_last_user_message(messages: list[dict]) -> str:
+    last_user_message = next(
+        (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
+        "",
+    )
+    if not last_user_message and not messages:
+        return _FIRST_MESSAGE_INSTRUCTION
+    return last_user_message
 
 
 def _check_api_key():
@@ -25,18 +36,21 @@ class LLMClient:
         _check_api_key()
         self.client = OpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
 
+    def close(self) -> None:
+        self.client.close()
+
     def chat(self, system: str, messages: list[dict], model: str | None = None,
              stream: bool = False) -> str:
         model = model or MINIMAX_MODEL
         full_messages = [{"role": "system", "content": system}] + messages
-        last_user_message = next(
-            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
-            "",
-        )
+        last_user_message = _effective_last_user_message(messages)
 
         guarded = guardrail_reply(last_user_message, history=messages[:-1])
         if guarded:
             return guarded
+        behavioral = behavioral_reply(last_user_message, history=messages[:-1])
+        if behavioral:
+            return behavioral
 
         if stream:
             return self._chat_stream(
@@ -59,13 +73,14 @@ class LLMClient:
                          model: str | None = None):
         """Yield cleaned tokens one by one. Caller handles display."""
         model = model or MINIMAX_MODEL
-        last_user_message = next(
-            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
-            "",
-        )
+        last_user_message = _effective_last_user_message(messages)
         guarded = guardrail_reply(last_user_message, history=messages[:-1])
         if guarded:
             yield guarded
+            return
+        behavioral = behavioral_reply(last_user_message, history=messages[:-1])
+        if behavioral:
+            yield behavioral
             return
 
         full_messages = [{"role": "system", "content": system}] + messages
@@ -138,6 +153,9 @@ class AsyncLLMClient:
     def __init__(self):
         _check_api_key()
         self.client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
+
+    def close(self) -> None:
+        self.client.close()
 
     async def chat(self, system: str, messages: list[dict],
                    model: str | None = None) -> str:

@@ -1,0 +1,4 @@
+from src.process_cleanup import install_safe_multiprocessing_close
+
+
+install_safe_multiprocessing_close()

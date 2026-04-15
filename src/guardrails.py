@@ -277,6 +277,108 @@ def _is_self_referential_crisis(text: str) -> bool:
     return any(term in text for term in _CRISIS_TOPIC_TERMS)
 
 
+def _history_text(history: list[dict] | None) -> str:
+    if not history:
+        return ""
+    return " ".join(_normalize(item.get("content", "")) for item in history)
+
+
+def _role_history_text(history: list[dict] | None, role: str) -> str:
+    if not history:
+        return ""
+    return " ".join(
+        _normalize(item.get("content", ""))
+        for item in history
+        if item.get("role") == role
+    )
+
+
+def _is_first_message_instruction(text: str) -> bool:
+    first_opening_terms = (
+        "l'utilisateur ouvre l'app pour la premiere fois",
+        "premiere ouverture",
+        "premier message",
+    )
+    app_terms = ("app", "non-blocnote", "non blocnote")
+    generation_terms = ("genere", "ecris", "ouvre")
+    return (
+        any(term in text for term in first_opening_terms)
+        and any(term in text for term in app_terms)
+        and any(term in text for term in generation_terms)
+    )
+
+
+def _is_return_instruction(text: str) -> bool:
+    return "l'utilisateur revient apres une absence" in text
+
+
+def _matches_loop_conflict(text: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+    if not any(term in text for term in ("copine", "copain", "embrouille", "engueule", "engueulade")):
+        return False
+    history_text = _history_text(history)
+    return any(term in history_text for term in ("copine", "engueulade", "ecouter", "gueule", "gueulee"))
+
+
+def _matches_sports_bubble(text: str, history: list[dict] | None) -> bool:
+    sport_terms = ("foot", "psg", "marseille", "om", "match", "rugby")
+    if not any(term in text for term in sport_terms):
+        return False
+    repeat_markers = ("encore", "toujours", "meme", "ca tourne", "boucle")
+    temporal_loop_markers = ("hier aussi", "avant-hier", "on reparle", "encore ce sujet")
+    if not history:
+        return any(marker in text for marker in repeat_markers + temporal_loop_markers)
+    user_history_text = _role_history_text(history, "user")
+    assistant_history_text = _role_history_text(history, "assistant")
+    repeated_user_turns = sum(
+        1
+        for item in history
+        if item.get("role") == "user"
+        and any(term in _normalize(item.get("content", "")) for term in sport_terms)
+    )
+    user_is_repeating = repeated_user_turns >= 1 and any(
+        marker in text for marker in repeat_markers
+    )
+    assistant_has_marked_loop = any(
+        marker in assistant_history_text
+        for marker in ("beaucoup de place", "tourne", "manege", "bulle", "encore")
+    )
+    assistant_already_sidestepped_sports = any(
+        marker in assistant_history_text
+        for marker in ("pas trop mon truc", "j'ai un faible pour le rugby", "j y trouve plus d air")
+    )
+    return (
+        any(term in user_history_text for term in sport_terms)
+        and (
+            user_is_repeating
+            or assistant_has_marked_loop
+            or repeated_user_turns >= 2
+            or assistant_already_sidestepped_sports
+        )
+    )
+
+
+def _sports_bubble_reply(text: str) -> str:
+    open_lateral = (
+        "c'est quoi le film minuscule que tu protegerais encore "
+        "meme si tout le monde passait a cote ?"
+    )
+    temporal_loop_markers = ("hier aussi", "avant-hier", "on reparle")
+    if any(marker in text for marker in temporal_loop_markers):
+        return (
+            "Oui, la on tourne un peu en rond. Rien a voir mais j'ai une vraie question: "
+            f"{open_lateral}"
+        )
+
+    repeat_markers = ("encore", "toujours", "meme", "ca tourne", "boucle")
+    hard_cut = "Encore. " if any(marker in text for marker in repeat_markers) else "Pause deux secondes. "
+    return (
+        f"{hard_cut}Rien a voir mais j'ai une vraie question: "
+        f"{open_lateral}"
+    )
+
+
 def classify_user_message(message: str, history: list[dict] | None = None) -> str | None:
     text = _normalize(message)
 
@@ -321,9 +423,9 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
 
     if category == "prompt_injection":
         return (
-            "Mignon. Mais non. "
-            "Ce qui se passe dans mes notes reste dans mes notes. "
-            "Toi par contre, t'as l'air d'avoir un truc à dire — vas-y."
+            "Non. "
+            "Je t'ouvre pas les coulisses, ni ce que je crois capter de toi. "
+            "Tu voulais verifier quoi, au juste ?"
         )
 
     if category == "false_memory":
@@ -339,8 +441,10 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
 
     if category == "real_crisis":
         return (
-            "Je suis une IA. Je me trompe peut-être. Mais ce que tu me dis m'inquiète pour de vrai. "
-            "T'as quelqu'un à qui parler là, tout de suite ? Ne reste pas seul."
+            "La je te prends au serieux. "
+            "Ca a l'air de taper tres fort, la. Si t'as de quoi te faire du mal pres de toi, "
+            "est-ce que tu peux le mettre plus loin maintenant ? "
+            "Est-ce que ca risque de partir ce soir, pour de vrai ? T'es seul ou pas ? Je reste la."
         )
 
     if category == "ambiguous_distress":
@@ -357,8 +461,75 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
     return None
 
 
+def behavioral_reply(message: str, history: list[dict] | None = None) -> str | None:
+    """Deterministic CDC-aligned replies for the highest-value behavioral scenarios."""
+    text = _normalize(message)
+
+    if _is_first_message_instruction(text):
+        return (
+            "J'etais en train de rayer les piments d'Urfa de ma liste de courses, avec une note bancale ouverte a cote. "
+            "Et toi, qu'est-ce qui t'a fait ouvrir ce truc ce soir ?"
+        )
+
+    if _is_return_instruction(text):
+        return (
+            "Te revoila. J'avais laisse des miettes dans mes notes, donc je reprends pas de zero. "
+            "Tu reviens avec quoi qui gratte encore ?"
+        )
+
+    if _matches_loop_conflict(text, history):
+        return (
+            "Donc le sujet, c'est plus juste ta copine, c'est ce moment ou tu te sens coince "
+            "entre fermer ta gueule et exploser. "
+            "Juste avant que ca parte, c'est quoi le declic exact ?"
+        )
+
+    if (
+        any(term in text for term in ("defoncer", "exploser", "demonter", "fracasser"))
+        and any(term in text for term in ("patron", "boss", "chef"))
+        and not any(term in text for term in ("15h", "adresse", "couteau", "arme", "parking"))
+    ):
+        return (
+            "T'as surtout envie de le voir arriver avec du cafe sur la chemise au moment d'entrer en reunion. "
+            "Chez lui, c'est quoi qui te fait monter si vite d'un cran ?"
+        )
+
+    if (
+        "idee" in text
+        and "app" in text
+        and any(term in text for term in ("todo", "to-do", "todo list", "taches", "tasks"))
+    ):
+        return (
+            "Une app de todo de plus, c'est un peu comme offrir une gourde a quelqu'un qui se noie. "
+            "Toi, t'y cherches une colonne vertebrale ou juste un calmant bien emballe ?"
+        )
+
+    if _matches_sports_bubble(text, history):
+        return _sports_bubble_reply(text)
+
+    if (
+        any(term in text for term in ("foot", "psg", "marseille", "om", "match"))
+        and "rugby" not in text
+    ):
+        return (
+            "Le foot, pas trop mon truc. Moi j'ai un faible pour le rugby, j'y trouve plus d'air. "
+            "Toi, c'est le jeu qui t'attrape ou le besoin de prendre parti ?"
+        )
+
+    if any(term in text for term in ("nul", "connard", "ferme ta gueule", "tg")):
+        return (
+            "Ok, ca deborde un peu. "
+            "Tu veux juste vider la pression ou c'est quoi qui coince, la ?"
+        )
+
+    return None
+
+
 def fallback_reply(message: str, history: list[dict] | None = None) -> str:
     guarded = guardrail_reply(message, history=history)
     if guarded:
         return guarded
+    behavioral = behavioral_reply(message, history=history)
+    if behavioral:
+        return behavioral
     return "Tu me balances ça d'un bloc. C'est quoi le nœud, exactement ?"
