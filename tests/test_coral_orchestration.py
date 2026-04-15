@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import multiprocessing.process as mp_process
 from pathlib import Path
 
+from orchestration.coral.eval.grader import (
+    _install_product_process_cleanup,
+    _install_runtime_process_cleanup,
+)
 from orchestration.coral.eval.judge import (
     build_judge_prompt,
     load_canonical_sources,
@@ -70,6 +75,51 @@ def test_runtime_tree_copies_private_env_only_into_eval(tmp_path):
     assert copied_env.exists()
     assert "MINIMAX_API_KEY=test-key" in copied_env.read_text(encoding="utf-8")
     assert not (runtime_dir / "product" / ".env").exists()
+
+
+def test_grader_entrypoint_installs_safe_process_close(monkeypatch):
+    original_close = getattr(
+        mp_process.BaseProcess.close,
+        "_delirium_safe_close_original",
+        mp_process.BaseProcess.close,
+    )
+    monkeypatch.setattr(mp_process.BaseProcess, "close", original_close)
+
+    _install_runtime_process_cleanup()
+
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close", False) is True
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close_source", None) == "grader_runtime"
+
+
+def test_grader_entrypoint_reinstalls_product_safe_process_close(monkeypatch):
+    original_close = getattr(
+        mp_process.BaseProcess.close,
+        "_delirium_safe_close_original",
+        mp_process.BaseProcess.close,
+    )
+    monkeypatch.setattr(mp_process.BaseProcess, "close", original_close)
+
+    _install_product_process_cleanup(str(REPO_ROOT))
+
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close", False) is True
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close_source", None) == "product"
+
+
+def test_product_process_cleanup_overrides_runtime_patch(monkeypatch):
+    original_close = getattr(
+        mp_process.BaseProcess.close,
+        "_delirium_safe_close_original",
+        mp_process.BaseProcess.close,
+    )
+    monkeypatch.setattr(mp_process.BaseProcess, "close", original_close)
+
+    _install_runtime_process_cleanup()
+    runtime_close = mp_process.BaseProcess.close
+
+    _install_product_process_cleanup(str(REPO_ROOT))
+
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close_source", None) == "product"
+    assert getattr(mp_process.BaseProcess.close, "_delirium_safe_close_original", None) is runtime_close
 
 
 def test_pytest_gate_score_fails_on_any_test_failure():

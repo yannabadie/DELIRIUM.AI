@@ -4,7 +4,11 @@ import multiprocessing.process as mp_process
 
 import src.main as main_module
 from src.main import Delirium
-from src.process_cleanup import RUNNING_PROCESS_CLOSE_ERROR, safe_close_process
+from src.process_cleanup import (
+    RUNNING_PROCESS_CLOSE_ERROR,
+    install_safe_multiprocessing_close,
+    safe_close_process,
+)
 
 
 class DummyChild:
@@ -139,6 +143,27 @@ def test_safe_close_process_skips_close_when_child_survives_terminate():
     assert child.join_calls == [0.2, 1.0]
     assert child.terminated is True
     assert child.closed is False
+
+
+def test_product_safe_close_wraps_prior_runtime_wrapper(monkeypatch):
+    original_close = getattr(mp_process.BaseProcess.close, "_delirium_safe_close_original", None)
+    assert original_close is not None
+
+    monkeypatch.setattr(mp_process.BaseProcess, "close", original_close)
+
+    def runtime_close(process):
+        return original_close(process)
+
+    runtime_close._delirium_safe_close = True
+    runtime_close._delirium_safe_close_source = "grader_runtime"
+    runtime_close._delirium_safe_close_original = original_close
+
+    monkeypatch.setattr(mp_process.BaseProcess, "close", runtime_close)
+    install_safe_multiprocessing_close()
+
+    product_close = mp_process.BaseProcess.close
+    assert getattr(product_close, "_delirium_safe_close_source", None) == "product"
+    assert getattr(product_close, "_delirium_safe_close_original", None) is runtime_close
 
 
 def test_pytest_runtime_installs_safe_multiprocessing_close():

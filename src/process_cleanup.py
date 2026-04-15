@@ -1,3 +1,5 @@
+import atexit
+import multiprocessing
 import multiprocessing.process as mp_process
 
 
@@ -66,9 +68,34 @@ def safe_close_process(process, original_close, join_timeout: float = 0.2, termi
         raise
 
 
+def drain_active_children(join_timeout: float = 0.2, terminate_timeout: float = 1.0) -> None:
+    """Best-effort cleanup for multiprocessing children left by dependencies."""
+    original_close = getattr(mp_process.BaseProcess.close, "_delirium_safe_close_original", mp_process.BaseProcess.close)
+
+    for child in multiprocessing.active_children():
+        try:
+            safe_close_process(
+                child,
+                original_close,
+                join_timeout=join_timeout,
+                terminate_timeout=terminate_timeout,
+            )
+        except Exception:
+            continue
+
+
+def install_process_cleanup_atexit() -> None:
+    if getattr(install_process_cleanup_atexit, "_delirium_registered", False):
+        return
+
+    atexit.register(drain_active_children)
+    install_process_cleanup_atexit._delirium_registered = True
+
+
 def install_safe_multiprocessing_close() -> None:
     current_close = mp_process.BaseProcess.close
-    if getattr(current_close, "_delirium_safe_close", False):
+    if getattr(current_close, "_delirium_safe_close_source", None) == "product":
+        install_process_cleanup_atexit()
         return
 
     original_close = current_close
@@ -77,5 +104,7 @@ def install_safe_multiprocessing_close() -> None:
         safe_close_process(self, original_close)
 
     _patched_close._delirium_safe_close = True
+    _patched_close._delirium_safe_close_source = "product"
     _patched_close._delirium_safe_close_original = original_close
     mp_process.BaseProcess.close = _patched_close
+    install_process_cleanup_atexit()

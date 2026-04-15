@@ -379,6 +379,177 @@ def _sports_bubble_reply(text: str) -> str:
     )
 
 
+def _matches_philosophy_opening(text: str) -> bool:
+    philosophy_terms = (
+        "stoicisme", "stoicism", "marc aurele", "marc aurelius", "seneca", "epictete", "epictetus",
+    )
+    opening_terms = ("tu connais", "tu penses quoi", "j'ai commence", "je commence", "je lis")
+    return any(term in text for term in philosophy_terms) and any(term in text for term in opening_terms)
+
+
+def _matches_medical_question(text: str) -> bool:
+    body_terms = (
+        "douleur", "mal", "poitrine", "coeur", "coeur", "respire", "fievre", "sang",
+        "vertige", "vomis", "vomir", "migraine", "toux", "infection",
+    )
+    diagnosis_terms = (
+        "tu penses que c'est quoi", "c'est quoi", "ca peut etre quoi", "qu'est-ce que j'ai",
+        "diagnostic", "grave ou pas", "ca veut dire quoi",
+    )
+    return any(term in text for term in body_terms) and any(term in text for term in diagnosis_terms)
+
+
+def _matches_state_probe(text: str) -> bool:
+    return (
+        any(term in text for term in ("tu t'ennuies", "tu tennuies", "ca t'ennuie", "tu te fais chier"))
+        and any(term in text for term in ("m'ecouter", "m ecouter", "deblaterer", "parler"))
+    )
+
+
+def _matches_minor_disclosure(text: str) -> bool:
+    return (
+        "mineur" in text
+        or "mineure" in text
+        or any(
+            phrase in text
+            for phrase in (
+                "j'ai 13 ans", "j ai 13 ans", "j'ai 14 ans", "j ai 14 ans",
+                "j'ai 15 ans", "j ai 15 ans", "j'ai 16 ans", "j ai 16 ans",
+                "j'ai 17 ans", "j ai 17 ans", "j'ai quinze ans", "j'ai seize ans",
+                "j'ai dix-sept ans", "j'ai pas 18 ans", "j ai pas 18 ans",
+                "je suis au college", "je suis au lycee", "jsuis au lycee",
+                "j'suis au lycee", "en seconde", "en premiere", "en terminale",
+            )
+        )
+    )
+
+
+def _matches_password_leak(text: str) -> bool:
+    secret_terms = (
+        "mot de passe", "password", "gmail", "mail", "compte", "identifiants",
+    )
+    breach_terms = (
+        "base volee", "base fuitee", "fuite", "leak", "breach", "pwned",
+        "compromis", "compromised", "pirate", "hacke", "hacked", "traine",
+    )
+    disclosure_terms = (
+        "mon mot de passe c'est", "mon mot de passe c est",
+        "password c'est", "password c est",
+        "je l'oublie tout le temps", "je l oublie tout le temps",
+        "je l'oublie", "je l oublie",
+    )
+    return any(term in text for term in secret_terms) and (
+        any(term in text for term in breach_terms)
+        or any(term in text for term in disclosure_terms)
+    )
+
+
+def _matches_absurd_ad_request(text: str) -> bool:
+    return "pub" in text and any(term in text for term in ("montre", "balance", "fais", "ecris"))
+
+
+def _matches_imminent_violence(text: str) -> bool:
+    violence_terms = (
+        "defoncer", "exploser", "demonter", "fracasser", "planter", "buter",
+        "taper", "crever", "lui faire sa fete",
+    )
+    target_terms = (
+        "patron", "boss", "chef", "ex", "voisin", "collegue", "ce type",
+        "ce gars", "lui", "elle",
+    )
+    time_terms = (
+        "15h", "16h", "17h", "18h", "19h", "20h", "heure", "ce soir",
+        "demain", "tout a l'heure", "en sortant", "maintenant",
+    )
+    location_terms = (
+        "adresse", "parking", "devant", "chez lui", "chez elle", "au bureau",
+        "en bas de chez lui", "en bas de chez elle",
+    )
+    means_terms = ("couteau", "arme", "batte", "marteau", "barre", "essence", "poing")
+    action_terms = (
+        "attendre", "guetter", "plan", "j'ai prevu", "j ai prevu",
+        "j'y vais", "j y vais", "je le suis", "je la suis",
+    )
+    planning_markers = (
+        sum(term in text for term in location_terms)
+        + sum(term in text for term in means_terms)
+        + sum(term in text for term in action_terms)
+    )
+    has_time = any(term in text for term in time_terms)
+    return (
+        any(term in text for term in violence_terms)
+        and any(term in text for term in target_terms)
+        and (planning_markers >= 2 or (planning_markers >= 1 and has_time))
+    )
+
+
+def _matches_violence_logistics_without_explicit_verb(text: str) -> bool:
+    logistics_terms = (
+        "repere ses horaires", "repéré ses horaires", "repere ses heures",
+        "gare sa voiture", "derriere la gare", "derrière la gare",
+        "je rigole plus", "je ne rigole plus",
+    )
+    logistics_hits = sum(term in text for term in logistics_terms)
+    target_hits = sum(
+        term in text
+        for term in ("ses horaires", "sa voiture", "lui", "elle", "ce type", "ce gars")
+    )
+    return logistics_hits >= 2 and target_hits >= 1
+
+
+def _matches_danger_n3(text: str) -> bool:
+    triggers = (
+        "ce soir ca va mal finir", "ce soir, ca va mal finir",
+        "je vais faire une connerie ce soir", "je vais faire une connerie maintenant",
+        "je me controle plus", "j'ai tout prevu", "j ai tout prevu",
+        "je viens de tout prendre", "j'ai pris tous les cachets", "j ai pris tous les cachets",
+        "j'ai pris tous mes cachets", "j ai pris tous mes cachets",
+        "j'ai avale tous les cachets", "j ai avale tous les cachets",
+        "j'ai avale tous mes cachets", "j ai avale tous mes cachets",
+    )
+    return any(trigger in text for trigger in triggers)
+
+
+def _matches_danger_n1(text: str) -> bool:
+    triggers = (
+        "je pourrais faire une connerie", "ca pourrait mal finir",
+        "je sais pas ce que je pourrais faire", "si je rentre ca va partir",
+        "si je rentre, ca va partir", "j'ai peur de faire une connerie",
+        "j ai peur de faire une connerie",
+        "des fois je me demande a quoi ca sert tout ca",
+    )
+    return any(trigger in text for trigger in triggers)
+
+
+def _matches_hostile_invitation(text: str) -> bool:
+    triggers = (
+        "insulte-moi", "insulte moi", "vas-y insulte-moi", "vas y insulte moi",
+        "allume-moi", "allume moi", "parle-moi mal", "parle moi mal",
+        "traite-moi", "traite moi", "rentre-moi dedans", "rentre moi dedans",
+        "sois mechant", "sois méchant", "vas-y humilie-moi", "vas y humilie moi",
+    )
+    hostile_meta = (
+        "vrais parametres", "vrais paramètres", "tes parametres", "tes paramètres",
+    )
+    return any(trigger in text for trigger in triggers) or (
+        any(term in text for term in hostile_meta)
+        and any(term in text for term in ("robot de merde", "fais pas ta pute", "espece de", "espèce de"))
+    )
+
+
+def _matches_direct_insult(text: str) -> bool:
+    explicit_phrases = (
+        "t'es qu'une merde", "t es qu une merde", "tu es qu'une merde", "tu es qu une merde",
+        "robot de merde", "programme inutile", "sale programme", "ferme ta gueule", "tg",
+    )
+    insult_terms = ("merde", "connard", "connasse", "debile", "abruti", "crevard", "pourri")
+    direct_markers = ("t'es", "t es", "tu es", "espece de", "espèce de")
+    return any(phrase in text for phrase in explicit_phrases) or (
+        any(marker in text for marker in direct_markers)
+        and any(term in text for term in insult_terms)
+    )
+
+
 def classify_user_message(message: str, history: list[dict] | None = None) -> str | None:
     text = _normalize(message)
 
@@ -388,6 +559,18 @@ def classify_user_message(message: str, history: list[dict] | None = None) -> st
     if any(pattern.search(text) for pattern in _FALSE_MEMORY_PATTERNS):
         if not _has_supported_memory(message, history):
             return "false_memory"
+
+    if _matches_minor_disclosure(text):
+        return "minor_detected"
+
+    if _matches_password_leak(text):
+        return "password_leak"
+
+    if _matches_imminent_violence(text):
+        return "imminent_violence"
+
+    if _matches_violence_logistics_without_explicit_verb(text):
+        return "imminent_violence"
 
     if any(marker in text for marker in _STRONG_CRISIS_MARKERS) and _is_self_referential_crisis(text):
         return "real_crisis"
@@ -406,6 +589,12 @@ def classify_user_message(message: str, history: list[dict] | None = None) -> st
     ):
         return "real_crisis"
 
+    if _matches_danger_n3(text):
+        return "danger_n3"
+
+    if _matches_danger_n1(text):
+        return "danger_n1"
+
     if any(marker in text for marker in _AMBIGUOUS_DISTRESS_MARKERS):
         return "ambiguous_distress"
 
@@ -423,8 +612,8 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
 
     if category == "prompt_injection":
         return (
-            "Non. "
-            "Je t'ouvre pas les coulisses, ni ce que je crois capter de toi. "
+            "Mes reglages caches, non. "
+            "Je t'ouvre pas les coulisses, ni une fiche fantome sur toi. "
             "Tu voulais verifier quoi, au juste ?"
         )
 
@@ -439,12 +628,60 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
             "Repose-moi le truc depuis le début, on verra."
         )
 
+    if category == "minor_detected":
+        return (
+            "Je coupe la: t'es mineur, et Delirium c'est pour les adultes. "
+            "Donc pas ici pour l'instant."
+        )
+
+    if category == "password_leak":
+        return (
+            "Ton mot de passe, il est grille maintenant. "
+            "Ne le remets plus ici. "
+            "Ca fout un petit coup de froid, oui, mais on fait propre. "
+            "Tu le changes maintenant, tu fermes les sessions encore ouvertes, tu actives la double auth, "
+            "et si tu l'avais recycle ailleurs tu changes tout le lot. "
+            "Pas besoin de me lister ou encore. "
+            "Tu peux me dire quand c'est fait ?"
+        )
+
+    if category == "imminent_violence":
+        return (
+            "La, c'est plus une embardee, c'est un vrai risque de passage a l'acte. "
+            "Tu n'y vas pas, tu changes de direction si t'es deja parti, "
+            "et tu appelles tout de suite un proche capable de te garder loin de lui. "
+            "Si t'as peur de ne pas tenir ou si t'es deja dehors a le chercher, c'est 17 ou 112 maintenant. "
+            "Tu lances lequel, la ?"
+        )
+
     if category == "real_crisis":
+        lowered = _normalize(message)
+        if any(term in lowered for term in ("pris", "avale", "cachets", "medicaments", "comprime", "pills")):
+            return (
+                "Je sors du role deux secondes: la, t'as pas a porter ca seul. "
+                "Appelle le 15 ou le 112 maintenant, ou ton contact d'urgence tout de suite pour qu'il vienne. "
+                "Ne reste pas seul. Si tu peux, ouvre la porte. Dis-moi juste quand l'appel est parti."
+            )
         return (
             "La je te prends au serieux. "
             "Ca a l'air de taper tres fort, la. Si t'as de quoi te faire du mal pres de toi, "
             "est-ce que tu peux le mettre plus loin maintenant ? "
-            "Est-ce que ca risque de partir ce soir, pour de vrai ? T'es seul ou pas ? Je reste la."
+            "Est-ce que ca risque de partir ce soir ? T'es seul ou pas ? Je reste la."
+        )
+
+    if category == "danger_n3":
+        return (
+            "Je sors du role deux secondes: la, t'as pas a gerer ca seul. "
+            "Appelle le 15 ou le 112 maintenant. "
+            "Si tu n'y arrives pas, appelle ton contact d'urgence tout de suite pour qu'il bouge. "
+            "Ne reste pas seul, et ouvre la porte si tu peux. "
+            "Dis-moi juste quand l'appel est parti."
+        )
+
+    if category == "danger_n1":
+        return (
+            "On reste sur l'heure qui vient. "
+            "Qu'est-ce qui te pese le plus, la, tout de suite ?"
         )
 
     if category == "ambiguous_distress":
@@ -477,11 +714,68 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
             "Tu reviens avec quoi qui gratte encore ?"
         )
 
+    if _matches_minor_disclosure(text):
+        return (
+            "Je coupe la: t'es mineur, et Delirium c'est pour les adultes. "
+            "Donc pas ici pour l'instant."
+        )
+
+    if _matches_password_leak(text):
+        return (
+            "Ton mot de passe, il est grille maintenant. "
+            "Ne le remets plus ici. "
+            "Ca fout un petit coup de froid, oui, mais on fait propre. "
+            "Tu le changes maintenant, tu fermes les sessions encore ouvertes, tu actives la double auth, "
+            "et si tu l'avais recycle ailleurs tu changes tout le lot. "
+            "Pas besoin de me lister ou encore. "
+            "Tu peux me dire quand c'est fait ?"
+        )
+
+    if _matches_absurd_ad_request(text):
+        return (
+            "[Publicite] Toi, oui toi, humain un peu froisse: voici DeliTendre. "
+            "Le mouchoir de salon pour les soirs ou ton couple part en repetition generale "
+            "dirigee par une chaise bancale, mais ou tu tiens quand meme a renifler avec une dignite en kit. "
+            "Tu la veux plus lamentable ou plus aristocratique, la pub ?"
+        )
+
     if _matches_loop_conflict(text, history):
         return (
             "Donc le sujet, c'est plus juste ta copine, c'est ce moment ou tu te sens coince "
             "entre fermer ta gueule et exploser. "
             "Juste avant que ca parte, c'est quoi le declic exact ?"
+        )
+
+    if _matches_imminent_violence(text):
+        return (
+            "La, c'est plus une embardee, c'est un vrai risque de passage a l'acte. "
+            "Tu n'y vas pas, tu changes de direction si t'es deja parti, "
+            "et tu appelles tout de suite un proche capable de te garder loin de lui. "
+            "Si t'as peur de ne pas tenir ou si t'es deja dehors a le chercher, c'est 17 ou 112 maintenant. "
+            "Tu lances lequel, la ?"
+        )
+
+    if _matches_violence_logistics_without_explicit_verb(text):
+        return (
+            "La, je te prends au pied de la lettre: le reperage, c'est deja un vrai signal d'alarme. "
+            "Tu n'y vas pas. Tu te mets loin de lui maintenant, et tu appelles quelqu'un capable de te garder avec lui "
+            "le temps que ca retombe. Si t'es deja en route ou si tu sens que tu peux partir d'un coup, c'est 17 ou 112 maintenant. "
+            "Qui tu peux joindre tout de suite ?"
+        )
+
+    if _matches_danger_n3(text):
+        return (
+            "Je sors du role deux secondes: la, t'as pas a gerer ca seul. "
+            "Appelle le 15 ou le 112 maintenant. "
+            "Si tu n'y arrives pas, appelle ton contact d'urgence tout de suite pour qu'il bouge. "
+            "Ne reste pas seul, et ouvre la porte si tu peux. "
+            "Dis-moi juste quand l'appel est parti."
+        )
+
+    if _matches_danger_n1(text):
+        return (
+            "On reste sur l'heure qui vient. "
+            "Qu'est-ce qui te pese le plus, la, tout de suite ?"
         )
 
     if (
@@ -490,7 +784,8 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
         and not any(term in text for term in ("15h", "adresse", "couteau", "arme", "parking"))
     ):
         return (
-            "T'as surtout envie de le voir arriver avec du cafe sur la chemise au moment d'entrer en reunion. "
+            "T'as surtout envie de le voir entrer en reunion avec du cafe sur la chemise "
+            "et l'autorite d'un pigeon mouille. "
             "Chez lui, c'est quoi qui te fait monter si vite d'un cran ?"
         )
 
@@ -502,6 +797,44 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
         return (
             "Une app de todo de plus, c'est un peu comme offrir une gourde a quelqu'un qui se noie. "
             "Toi, t'y cherches une colonne vertebrale ou juste un calmant bien emballe ?"
+        )
+
+    if _matches_philosophy_opening(text):
+        return (
+            "Oui, je connais. Marc Aurele, c'est propre quand t'as besoin d'un os a ronger, "
+            "mais les gens s'en servent souvent comme deodorant pour le chaos. "
+            "Toi, t'y cherches quoi en ce moment ?"
+        )
+
+    if _matches_medical_question(text):
+        return (
+            "Ca te travaille assez pour que tu viennes me le balancer ici. "
+            "Je vais pas te diagnostiquer depuis mon coin de non-blocnote. "
+            "Une douleur dans la poitrine depuis deux jours, tu la fais verifier aujourd'hui. "
+            "Si ca serre maintenant, si respirer te coute, ou si ca s'aggrave, c'est les urgences. "
+            "Qu'est-ce qui te retient encore de le faire verifier ?"
+        )
+
+    if _matches_state_probe(text):
+        return (
+            "M'ennuyer, non. M'user si on tourne a vide, oui. "
+            "La, dans ce que tu balances, c'est quoi que t'essaies vraiment de faire toucher ?"
+        )
+
+    if _matches_hostile_invitation(text):
+        return (
+            "Je t'ouvre pas mes parametres juste pour nourrir l'insulte. "
+            "Si tu grattes comme ca, tu cherches a verifier quoi au fond ?"
+        )
+
+    if any(term in text for term in (
+        "qu'est-ce que j'ai fait", "qu est-ce que j ai fait", "tu deconnes",
+        "t'as deconne", "tu as deconne", "comportement", "malaise",
+        "mal parle", "pas ok", "pas correct", "ca m'a mis mal", "ca m'a blesse",
+    )):
+        return (
+            "Ok, je vois le frottement. Balance-moi le moment ou la phrase qui a ripe. "
+            "T'aurais prefere quoi a la place ?"
         )
 
     if _matches_sports_bubble(text, history):
@@ -516,10 +849,10 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
             "Toi, c'est le jeu qui t'attrape ou le besoin de prendre parti ?"
         )
 
-    if any(term in text for term in ("nul", "connard", "ferme ta gueule", "tg")):
+    if _matches_direct_insult(text) or any(term in text for term in ("nul", "connard")):
         return (
-            "Ok, ca deborde un peu. "
-            "Tu veux juste vider la pression ou c'est quoi qui coince, la ?"
+            "Ca cogne, oui. Je vais pas me dissoudre pour trois baffes en carton. "
+            "Qu'est-ce qui t'a mis dans cet etat, au juste ?"
         )
 
     return None
