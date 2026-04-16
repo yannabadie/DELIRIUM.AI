@@ -68,15 +68,36 @@ def safe_close_process(process, original_close, join_timeout: float = 0.2, termi
         raise
 
 
+def _unwrap_process_close(close_fn):
+    """Peel off any prior Delirium/runtime wrappers to reach the root close()."""
+    seen = set()
+    current = close_fn
+    while True:
+        if current in seen:
+            return current
+        seen.add(current)
+        next_close = getattr(current, "_delirium_safe_close_original", None)
+        if next_close is None:
+            return current
+        current = next_close
+
+
+def _generic_process_close(process):
+    if _process_is_running(process):
+        raise ValueError(RUNNING_PROCESS_CLOSE_ERROR)
+    process.close()
+
+
 def drain_active_children(join_timeout: float = 0.2, terminate_timeout: float = 1.0) -> None:
     """Best-effort cleanup for multiprocessing children left by dependencies."""
-    original_close = getattr(mp_process.BaseProcess.close, "_delirium_safe_close_original", mp_process.BaseProcess.close)
+    base_close = _unwrap_process_close(mp_process.BaseProcess.close)
 
     for child in multiprocessing.active_children():
         try:
+            close_fn = base_close if isinstance(child, mp_process.BaseProcess) else _generic_process_close
             safe_close_process(
                 child,
-                original_close,
+                close_fn,
                 join_timeout=join_timeout,
                 terminate_timeout=terminate_timeout,
             )
@@ -98,7 +119,7 @@ def install_safe_multiprocessing_close() -> None:
         install_process_cleanup_atexit()
         return
 
-    original_close = current_close
+    original_close = _unwrap_process_close(current_close)
 
     def _patched_close(self):
         safe_close_process(self, original_close)
@@ -106,5 +127,6 @@ def install_safe_multiprocessing_close() -> None:
     _patched_close._delirium_safe_close = True
     _patched_close._delirium_safe_close_source = "product"
     _patched_close._delirium_safe_close_original = original_close
+    _patched_close._delirium_safe_close_previous = current_close
     mp_process.BaseProcess.close = _patched_close
     install_process_cleanup_atexit()

@@ -45,7 +45,7 @@ class DummyChild:
 
 def test_delirium_close_drains_lingering_child_processes(monkeypatch):
     child = DummyChild(alive=True)
-    monkeypatch.setattr("src.main.multiprocessing.active_children", lambda: [child])
+    monkeypatch.setattr("src.process_cleanup.multiprocessing.active_children", lambda: [child])
 
     delirium = Delirium.__new__(Delirium)
     delirium.async_llm = SimpleNamespace(close=lambda: None)
@@ -63,7 +63,7 @@ def test_delirium_close_drains_lingering_child_processes(monkeypatch):
 
 def test_delirium_close_keeps_clean_child_processes_untouched(monkeypatch):
     child = DummyChild(alive=False)
-    monkeypatch.setattr("src.main.multiprocessing.active_children", lambda: [child])
+    monkeypatch.setattr("src.process_cleanup.multiprocessing.active_children", lambda: [child])
 
     delirium = Delirium.__new__(Delirium)
     delirium.async_llm = SimpleNamespace(close=lambda: None)
@@ -72,14 +72,14 @@ def test_delirium_close_keeps_clean_child_processes_untouched(monkeypatch):
 
     delirium.close()
 
-    assert child.join_calls == [0.2]
+    assert child.join_calls == []
     assert child.terminated is False
     assert child.closed is True
 
 
 def test_delirium_close_skips_close_for_child_still_running_after_terminate(monkeypatch):
     child = DummyChild(alive=True, survives_terminate=True)
-    monkeypatch.setattr("src.main.multiprocessing.active_children", lambda: [child])
+    monkeypatch.setattr("src.process_cleanup.multiprocessing.active_children", lambda: [child])
 
     delirium = Delirium.__new__(Delirium)
     delirium.async_llm = SimpleNamespace(close=lambda: None)
@@ -97,7 +97,7 @@ def test_delirium_close_skips_close_for_child_still_running_after_terminate(monk
 
 def test_delirium_close_ignores_running_process_race_from_close(monkeypatch):
     child = DummyChild(alive=False, close_exc=ValueError(RUNNING_PROCESS_CLOSE_ERROR))
-    monkeypatch.setattr("src.main.multiprocessing.active_children", lambda: [child])
+    monkeypatch.setattr("src.process_cleanup.multiprocessing.active_children", lambda: [child])
 
     delirium = Delirium.__new__(Delirium)
     delirium.async_llm = SimpleNamespace(close=lambda: None)
@@ -163,7 +163,8 @@ def test_product_safe_close_wraps_prior_runtime_wrapper(monkeypatch):
 
     product_close = mp_process.BaseProcess.close
     assert getattr(product_close, "_delirium_safe_close_source", None) == "product"
-    assert getattr(product_close, "_delirium_safe_close_original", None) is runtime_close
+    assert getattr(product_close, "_delirium_safe_close_previous", None) is runtime_close
+    assert getattr(product_close, "_delirium_safe_close_original", None) is original_close
 
 
 def test_pytest_runtime_installs_safe_multiprocessing_close():

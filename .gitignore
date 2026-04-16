@@ -10,3 +10,9 @@ venv/
 .claude/
 claude/
 data/
+.codex/
+.coral_agent_id
+.coral_dir
+.opencode/
+AGENTS.md
+CLAUDE.md

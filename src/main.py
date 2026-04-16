@@ -11,7 +11,6 @@ Commands:
 
 import asyncio
 import logging
-import multiprocessing
 import sys
 import warnings
 from datetime import datetime
@@ -48,6 +47,7 @@ from src.s2.analyzer import S2Analyzer
 from src.embeddings import get_embedder, cosine_similarity
 from src.guardrails import behavioral_reply
 from src.process_cleanup import (
+    drain_active_children,
     install_safe_multiprocessing_close,
     is_running_process_close_error,
 )
@@ -80,31 +80,10 @@ def _is_running_process_close_error(exc: Exception) -> bool:
 
 def _drain_active_children() -> None:
     """Best-effort cleanup for multiprocessing children left by dependencies."""
-    for child in multiprocessing.active_children():
-        try:
-            child.join(timeout=0.2)
-            if child.is_alive():
-                logger.warning("Terminating lingering child process pid=%s", child.pid)
-                child.terminate()
-                child.join(timeout=1.0)
-            if child.is_alive():
-                logger.warning(
-                    "Child process pid=%s still alive after terminate/join; skipping close()",
-                    child.pid,
-                )
-                continue
-            try:
-                child.close()
-            except ValueError as exc:
-                if _is_running_process_close_error(exc):
-                    logger.warning(
-                        "Child process pid=%s raised running-process close() race; skipping close()",
-                        child.pid,
-                    )
-                    continue
-                raise
-        except Exception as exc:
-            logger.warning("Child process cleanup failed for pid=%s: %s", child.pid, exc)
+    try:
+        drain_active_children()
+    except Exception as exc:
+        logger.warning("Child process cleanup failed: %s", exc)
 
 
 class Delirium:

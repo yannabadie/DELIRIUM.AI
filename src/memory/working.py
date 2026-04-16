@@ -35,6 +35,19 @@ Usure : {persona_state.fatigue:.2f}
 Friction : {persona_state.confrontation:.2f}
 Qualité d'écoute : {persona_state.empathy:.2f}""")
 
+        sections.append(
+            """═══ DISCIPLINE DE FIL ═══
+Priorité absolue : la conversation visible dans `messages` est le fil courant.
+- Reprends les faits explicites donnés dans ce fil quand ils deviennent utiles
+- Si l'utilisateur teste ta mémoire sur un fait de ce fil, réponds avec ce fait sans tourner autour
+- Sur une question directe ou un test de cohérence, réponds d'abord au sens littéral en peu de mots; si tu relances, fais-le après sans esquiver
+- Fais évoluer le ton progressivement selon l'accumulation des tours, même si l'état interne bouge peu
+- En début d'échange, une salutation simple appelle une réponse de première rencontre, pas une réponse générique
+- Hors crise réelle convergente, reste en personnage quand l'utilisateur demande ce que tu es
+- Dans les tours 4-5, garde un seul rappel concret du fil et evite les recapitulatifs ou explications de posture
+- Quand le fil devient lourd ou conflictuel, coupe l'imagerie d'un cran et privilegie des phrases plus simples"""
+        )
+
         # Vision du monde summary (Layer 4 — never disclose to user)
         if vision_summary:
             sections.append(
