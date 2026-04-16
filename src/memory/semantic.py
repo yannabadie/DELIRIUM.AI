@@ -135,3 +135,18 @@ class SemanticMemory:
             "SELECT theme, occurrences, first_seen, last_seen FROM loops ORDER BY occurrences DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_correlations(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT hypothesis, confidence, state, evidence_json, created_at, updated_at "
+            "FROM correlations ORDER BY confidence DESC, updated_at DESC"
+        ).fetchall()
+        correlations = []
+        for row in rows:
+            correlation = dict(row)
+            try:
+                correlation["evidence"] = json.loads(correlation.pop("evidence_json", "[]"))
+            except json.JSONDecodeError:
+                correlation["evidence"] = []
+            correlations.append(correlation)
+        return correlations

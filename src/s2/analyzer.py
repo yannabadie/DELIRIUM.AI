@@ -53,7 +53,7 @@ class S2Analyzer:
     async def analyze(self, fragment_id: str, user_message: str,
                       s1_response: str, session_messages: list[dict],
                       session_id: str):
-        """Run S2 analysis in background. Updates persona and semantic memory."""
+        """Run S2 analysis and return the parsed result."""
         try:
             s2_prompt = get_s2_prompt()
 
@@ -93,12 +93,14 @@ class S2Analyzer:
                 s2_result.get("recommended_H_delta", 0),
                 s2_result.get("themes_latents", []),
             )
+            return s2_result
 
         except Exception as e:
             logger.error("S2 analysis failed: %s", e)
             self.episodic.log_execution(
                 fragment_id, "s2_error", {"error": str(e)}
             )
+            return dict(DEFAULT_S2_RESULT)
 
     def _parse_s2_output(self, raw: str) -> dict:
         """Parse S2 JSON output, with fallback to defaults."""

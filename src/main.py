@@ -31,7 +31,7 @@ from rich.theme import Theme
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
-from src.config import MINIMAX_API_KEY, SQLITE_DB_PATH
+from src.config import MINIMAX_API_KEY, SQLITE_DB_PATH, validate_prompt_files
 from src.llm_client import LLMClient, AsyncLLMClient
 from src.memory.episodic import EpisodicMemory
 from src.memory.semantic import SemanticMemory
@@ -138,6 +138,33 @@ class Delirium:
         console.print()  # newline
         return "".join(tokens).strip()
 
+    def _maybe_resynthesize_world_vision(self, loop: asyncio.AbstractEventLoop,
+                                         fragment_id: str, s2_result: dict | None) -> None:
+        sessions_since = self.world_vision.get_sessions_since_last_vision()
+        if not self.world_vision.should_resynthesize(s2_result, sessions_since):
+            return
+
+        try:
+            vision = loop.run_until_complete(asyncio.to_thread(
+                self.world_vision.resynthesize,
+                self.semantic.get_active_themes(threshold=0.0),
+                self.semantic.get_correlations(),
+                self.semantic.get_loops(),
+                self.world_vision.get_danger_history(),
+                self.episodic.get_fragment_count(),
+            ))
+            self.episodic.log_execution(fragment_id, "world_vision_resynthesized", {
+                "version": vision.get("version"),
+                "sessions_since_last": sessions_since,
+                "danger_level": (s2_result or {}).get("danger_level", 0),
+            })
+        except Exception as exc:
+            logger.error("World vision resynthesis failed: %s", exc)
+            self.episodic.log_execution(fragment_id, "world_vision_resynthesis_error", {
+                "error": str(exc),
+                "sessions_since_last": sessions_since,
+            })
+
     def process_message(self, user_message: str) -> str:
         state = self.persona_engine.get_current_state()
 
@@ -198,12 +225,13 @@ class Delirium:
         # S2 analysis (async)
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(
+            s2_result = loop.run_until_complete(
                 self.s2.analyze(fragment_id, user_message, response,
                                 recent + [{"role": "user", "content": user_message},
                                            {"role": "assistant", "content": response}],
                                 self.session_id)
             )
+            self._maybe_resynthesize_world_vision(loop, fragment_id, s2_result)
             loop.run_until_complete(loop.shutdown_asyncgens())
         finally:
             loop.close()
@@ -457,6 +485,11 @@ def main():
     if not MINIMAX_API_KEY:
         console.print("[error]MINIMAX_API_KEY non configurée.[/error]")
         console.print("Copie .env.example en .env et renseigne ta clé API MiniMax.")
+        sys.exit(1)
+    try:
+        validate_prompt_files()
+    except FileNotFoundError as exc:
+        console.print(f"[error]{exc}[/error]")
         sys.exit(1)
 
     console.print(Panel(

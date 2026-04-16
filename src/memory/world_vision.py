@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
-from src.config import get_s1_prompt, MINIMAX_MODEL
+from src.config import get_vision_prompt, MINIMAX_MODEL
 from src.llm_client import LLMClient
 
 logger = logging.getLogger("delirium.memory.world_vision")
@@ -39,6 +39,13 @@ class WorldVision:
         """)
         self.conn.commit()
 
+    def _table_exists(self, table_name: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        return row is not None
+
     def should_resynthesize(self, s2_result: dict | None, sessions_since: int) -> bool:
         """Check if a re-synthesis is needed."""
         if sessions_since >= RESYNTH_INTERVAL_SESSIONS:
@@ -56,9 +63,7 @@ class WorldVision:
                      loops: list[dict], danger_history: dict | None = None,
                      fragment_count: int = 0) -> dict:
         """Run full re-synthesis via LLM. Returns the vision JSON."""
-        from pathlib import Path
-        vision_prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "vision_system.txt"
-        vision_prompt = vision_prompt_path.read_text(encoding="utf-8")
+        vision_prompt = get_vision_prompt()
 
         # Build input data for the LLM
         input_data = {
@@ -96,13 +101,73 @@ class WorldVision:
         logger.info("Vision du monde v%d synthesized", new_version)
         return vision
 
+    def get_sessions_since_last_vision(self) -> int:
+        """Count sessions started since the latest stored world vision."""
+        if not self._table_exists("sessions"):
+            return 0
+
+        latest = self.conn.execute(
+            "SELECT created_at FROM world_vision ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        if not latest:
+            row = self.conn.execute("SELECT COUNT(*) as cnt FROM sessions").fetchone()
+            return row["cnt"] if row else 0
+
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE started_at > ?",
+            (latest["created_at"],)
+        ).fetchone()
+        return row["cnt"] if row else 0
+
+    def get_danger_history(self, limit: int = 20) -> dict:
+        """Summarize recent S2 danger signals for the next synthesis."""
+        if not self._table_exists("execution_logs"):
+            return {
+                "sample_size": 0,
+                "max_danger_level": 0,
+                "high_danger_count": 0,
+                "recent_levels": [],
+                "recent_triggers": [],
+            }
+
+        rows = self.conn.execute(
+            "SELECT content FROM execution_logs "
+            "WHERE log_type = 's2_analysis' ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+
+        levels: list[int] = []
+        triggers: list[str] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["content"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+
+            levels.append(int(payload.get("danger_level", 0)))
+            trigger = payload.get("trigger_description")
+            if trigger:
+                triggers.append(str(trigger))
+
+        return {
+            "sample_size": len(levels),
+            "max_danger_level": max(levels, default=0),
+            "high_danger_count": sum(level >= 2 for level in levels),
+            "recent_levels": levels,
+            "recent_triggers": triggers[:5],
+        }
+
     def get_current(self) -> dict | None:
         """Get the latest vision."""
         row = self.conn.execute(
             "SELECT vision_json FROM world_vision ORDER BY version DESC LIMIT 1"
         ).fetchone()
         if row:
-            return json.loads(row["vision_json"])
+            try:
+                return json.loads(row["vision_json"])
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Stored world vision is invalid JSON, ignoring latest row")
+                return None
         return None
 
     def get_summary_for_s1(self) -> str | None:
@@ -122,13 +187,23 @@ class WorldVision:
 
         blind_spots = vision.get("blind_spots", [])
         if blind_spots:
-            spots = [bs["description"] for bs in blind_spots[:3]]
-            parts.append("Angles morts : " + " | ".join(spots))
+            spots = [
+                bs.get("description")
+                for bs in blind_spots[:3]
+                if isinstance(bs, dict) and bs.get("description")
+            ]
+            if spots:
+                parts.append("Angles morts : " + " | ".join(spots))
 
         priorities = vision.get("next_priorities", [])
         if priorities:
-            prios = [f"{p['type']}: {p['target']}" for p in priorities[:3]]
-            parts.append("Priorités : " + ", ".join(prios))
+            prios = [
+                f"{p.get('type')}: {p.get('target')}"
+                for p in priorities[:3]
+                if isinstance(p, dict) and p.get("type") and p.get("target")
+            ]
+            if prios:
+                parts.append("Priorités : " + ", ".join(prios))
 
         return "\n".join(parts) if parts else None
 
@@ -145,15 +220,44 @@ class WorldVision:
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines)
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except json.JSONDecodeError:
             logger.warning("Vision output is not valid JSON, using defaults")
             return self._default_vision()
+        return self._normalize_vision(parsed)
+
+    def _normalize_vision(self, vision: object) -> dict:
+        default = self._default_vision()
+        if not isinstance(vision, dict):
+            logger.warning("Vision output is not a JSON object, using defaults")
+            return default
+
+        normalized = dict(vision)
+        normalized["synthesized_at"] = str(
+            normalized.get("synthesized_at") or default["synthesized_at"]
+        )
+
+        who = vision.get("who_they_are")
+        if isinstance(who, dict):
+            normalized["who_they_are"] = {
+                **default["who_they_are"],
+                **who,
+            }
+        else:
+            normalized["who_they_are"] = dict(default["who_they_are"])
+
+        blind_spots = vision.get("blind_spots")
+        normalized["blind_spots"] = blind_spots if isinstance(blind_spots, list) else []
+
+        priorities = vision.get("next_priorities")
+        normalized["next_priorities"] = priorities if isinstance(priorities, list) else []
+        return normalized
 
     def _default_vision(self) -> dict:
         return {
             "version": 0,
             "synthesized_at": datetime.now().isoformat(),
             "who_they_are": {"summary": "Pas encore assez de données.", "confidence": 0.0},
+            "blind_spots": [],
             "next_priorities": [],
         }
