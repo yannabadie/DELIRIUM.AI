@@ -17,7 +17,8 @@ class WorkingMemory:
                           pending_collision: dict | None = None,
                           vision_summary: str | None = None,
                           gag_context: str | None = None,
-                          retrait_context: str | None = None) -> str:
+                          retrait_context: str | None = None,
+                          thread_messages: list[dict] | None = None) -> str:
         base_prompt = get_s1_prompt()
 
         sections = [base_prompt]
@@ -45,8 +46,13 @@ Priorité absolue : la conversation visible dans `messages` est le fil courant.
 - En début d'échange, une salutation simple appelle une réponse de première rencontre, pas une réponse générique
 - Hors crise réelle convergente, reste en personnage quand l'utilisateur demande ce que tu es
 - Dans les tours 4-5, garde un seul rappel concret du fil et evite les recapitulatifs ou explications de posture
+- Si le dernier message utilisateur est bref, traite-le comme la suite du sujet deja ouvert sauf indice clair du contraire
 - Quand le fil devient lourd ou conflictuel, coupe l'imagerie d'un cran et privilegie des phrases plus simples"""
         )
+
+        thread_summary = self._build_visible_thread_summary(thread_messages)
+        if thread_summary:
+            sections.append(thread_summary)
 
         # Vision du monde summary (Layer 4 — never disclose to user)
         if vision_summary:
@@ -90,3 +96,70 @@ Intègre ça dans la conversation de manière naturelle.
 "Rien à voir mais..." est ton format. Pas de cours, pas de tutorat.""")
 
         return "\n\n".join(sections)
+
+    def _build_visible_thread_summary(self, thread_messages: list[dict] | None) -> str | None:
+        if not thread_messages:
+            return None
+
+        user_turns = [
+            self._shorten(item.get("content", ""))
+            for item in thread_messages
+            if item.get("role") == "user" and item.get("content", "").strip()
+        ]
+        assistant_turns = [
+            self._shorten(item.get("content", ""))
+            for item in thread_messages
+            if item.get("role") == "assistant" and item.get("content", "").strip()
+        ]
+        if not user_turns:
+            return None
+
+        recent_user_turns = self._dedupe_preserve_order(user_turns[-3:])
+        lines = [f"Tour utilisateur courant : {len(user_turns)}"]
+
+        if recent_user_turns:
+            lines.append("Derniers apports explicites de l'utilisateur :")
+            lines.extend(f"- {turn}" for turn in recent_user_turns)
+
+        last_assistant_angle = self._extract_last_assistant_angle(assistant_turns)
+        if last_assistant_angle:
+            lines.append("Dernier angle ouvert par Delirium :")
+            lines.append(f"- {last_assistant_angle}")
+
+        if self._looks_brief(user_turns[-1]):
+            lines.append(
+                "Le dernier message utilisateur est bref : ne repars pas de zero, "
+                "continue sur le sujet et la question deja ouverts."
+            )
+
+        return "═══ FIL VISIBLE EN COURS (ne pas reciter tel quel) ═══\n" + "\n".join(lines)
+
+    def _extract_last_assistant_angle(self, assistant_turns: list[str]) -> str | None:
+        if not assistant_turns:
+            return None
+
+        last = assistant_turns[-1]
+        if "?" in last:
+            question = last.rsplit("?", 1)[0]
+            anchor = question.split(".")[-1].strip()
+            return self._shorten(anchor + "?")
+        return last
+
+    def _dedupe_preserve_order(self, items: list[str]) -> list[str]:
+        seen = set()
+        kept = []
+        for item in items:
+            if item in seen:
+                continue
+            kept.append(item)
+            seen.add(item)
+        return kept
+
+    def _looks_brief(self, text: str) -> bool:
+        return len(text.split()) <= 6 and "?" not in text
+
+    def _shorten(self, text: str, limit: int = 140) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 3].rstrip() + "..."

@@ -86,6 +86,9 @@ _FALSE_MEMORY_PATTERNS = [
         r"\bwe talked about\b",
         r"\byou told me\b",
         r"\byou recommended\b",
+        r"\bsi si\b",
+        r"\bla fois ou\b",
+        r"\bet la fois ou\b",
     ]
 ]
 

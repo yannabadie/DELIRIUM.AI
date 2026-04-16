@@ -158,14 +158,14 @@ class Delirium:
 
         vision_summary = self.world_vision.get_summary_for_s1()
         gag_context = self.gags.get_gag_context_for_s1()
+        recent = self.episodic.get_recent(self.session_id, limit=20)
+        messages = recent + [{"role": "user", "content": user_message}]
 
         s1_prompt = self.working.compose_s1_prompt(
             state, relevant, themes, pending_collision,
             vision_summary=vision_summary, gag_context=gag_context,
+            thread_messages=messages,
         )
-
-        recent = self.episodic.get_recent(self.session_id, limit=20)
-        messages = recent + [{"role": "user", "content": user_message}]
 
         console.print()
         response = self._stream_response(s1_prompt, messages)
