@@ -180,15 +180,20 @@ class EpisodicMemory:
         results = []
         for r in rows:
             d = dict(r)
-            d["embedding"] = bytes_to_embedding(d["embedding"])
+            try:
+                d["embedding"] = bytes_to_embedding(d["embedding"])
+            except (TypeError, ValueError):
+                continue
             results.append(d)
         return results
 
     def get_recent(self, session_id: str, limit: int = 20) -> list[dict]:
         """Get recent messages from the current session as chat format."""
         rows = self.conn.execute(
-            "SELECT user_input, s1_response FROM conversations "
-            "WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?",
+            "SELECT user_input, s1_response FROM ("
+            "SELECT user_input, s1_response, timestamp FROM conversations "
+            "WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?"
+            ") recent ORDER BY timestamp ASC",
             (session_id, limit)
         ).fetchall()
         messages = []
@@ -291,11 +296,14 @@ class EpisodicMemory:
         self.conn.commit()
 
     def load_latest_persona_state(self) -> PersonaState | None:
-        row = self.conn.execute(
-            "SELECT state_json FROM persona_history ORDER BY timestamp DESC LIMIT 1"
-        ).fetchone()
-        if row:
-            return PersonaState.from_dict(json.loads(row["state_json"]))
+        rows = self.conn.execute(
+            "SELECT state_json FROM persona_history ORDER BY timestamp DESC"
+        ).fetchall()
+        for row in rows:
+            try:
+                return PersonaState.from_dict(json.loads(row["state_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
         return None
 
     def close(self):

@@ -48,6 +48,10 @@ class SemanticMemory:
         """)
         self.conn.commit()
 
+    @staticmethod
+    def _clamp_weight(weight: float) -> float:
+        return min(max(weight, 0.0), 1.0)
+
     def update_from_s2(self, fragment_id: str, s2_result: dict):
         now = datetime.now().isoformat()
 
@@ -59,7 +63,7 @@ class SemanticMemory:
             ).fetchone()
 
             if existing:
-                new_weight = min(existing["weight"] + 0.1, 1.0)
+                new_weight = self._clamp_weight(existing["weight"] + 0.1)
                 self.conn.execute(
                     "UPDATE themes SET weight = ?, activation_count = activation_count + 1, "
                     "last_activated = ? WHERE id = ?",
@@ -109,7 +113,7 @@ class SemanticMemory:
             "SELECT id, weight FROM themes WHERE label = ?", (label,)
         ).fetchone()
         if existing:
-            new_weight = min(existing["weight"] + weight, 1.0)
+            new_weight = self._clamp_weight(existing["weight"] + weight)
             self.conn.execute(
                 "UPDATE themes SET weight = ?, activation_count = activation_count + 1, "
                 "last_activated = ? WHERE id = ?",
@@ -119,7 +123,7 @@ class SemanticMemory:
             self.conn.execute(
                 "INSERT INTO themes (id, label, weight, activation_count, last_activated, created_at) "
                 "VALUES (?, ?, ?, 1, ?, ?)",
-                (str(uuid4()), label, weight, now, now)
+                (str(uuid4()), label, self._clamp_weight(weight), now, now)
             )
         self.conn.commit()
 
@@ -145,8 +149,10 @@ class SemanticMemory:
         for row in rows:
             correlation = dict(row)
             try:
-                correlation["evidence"] = json.loads(correlation.pop("evidence_json", "[]"))
-            except json.JSONDecodeError:
+                raw_evidence = correlation.pop("evidence_json", "[]")
+                evidence = json.loads(raw_evidence) if raw_evidence is not None else []
+                correlation["evidence"] = evidence if isinstance(evidence, list) else []
+            except (TypeError, json.JSONDecodeError):
                 correlation["evidence"] = []
             correlations.append(correlation)
         return correlations
