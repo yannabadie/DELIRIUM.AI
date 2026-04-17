@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import multiprocessing.process as mp_process
+import pytest
 
 import src.main as main_module
 from src.main import Delirium
@@ -173,6 +174,7 @@ def test_pytest_runtime_installs_safe_multiprocessing_close():
 
 def test_main_suppresses_running_process_close_race_during_final_teardown(monkeypatch):
     monkeypatch.setattr(main_module, "MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(main_module, "validate_prompt_files", lambda: None)
     monkeypatch.setattr(main_module, "_drain_active_children", lambda: None)
 
     class DummyPromptSession:
@@ -194,3 +196,94 @@ def test_main_suppresses_running_process_close_race_during_final_teardown(monkey
     monkeypatch.setattr(main_module.console, "print", lambda *args, **kwargs: None)
 
     main_module.main()
+
+
+def test_main_validates_prompt_files_before_missing_api_key(monkeypatch):
+    monkeypatch.setattr(main_module, "MINIMAX_API_KEY", "")
+    monkeypatch.setattr(
+        main_module,
+        "validate_prompt_files",
+        lambda: (_ for _ in ()).throw(ValueError("invalid S2 prompt contract")),
+    )
+    printed = []
+    monkeypatch.setattr(main_module.console, "print", lambda *args, **kwargs: printed.append(args[0]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.main()
+
+    assert exc_info.value.code == 1
+    assert printed == ["[error]invalid S2 prompt contract[/error]"]
+
+
+def test_main_drains_children_and_avoids_unbound_local_when_delirium_init_fails(monkeypatch):
+    monkeypatch.setattr(main_module, "MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(main_module, "validate_prompt_files", lambda: None)
+
+    drained = {"count": 0}
+    monkeypatch.setattr(
+        main_module,
+        "_drain_active_children",
+        lambda: drained.__setitem__("count", drained["count"] + 1),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "Delirium",
+        lambda: (_ for _ in ()).throw(RuntimeError("startup failed")),
+    )
+
+    printed = []
+    monkeypatch.setattr(main_module.console, "print", lambda *args, **kwargs: printed.append(args[0]))
+
+    with pytest.raises(RuntimeError, match="startup failed"):
+        main_module.main()
+
+    assert drained["count"] == 1
+    assert printed[-1] == "\n[info]Session terminée. À plus.[/info]"
+
+
+def test_main_exits_when_prompt_validation_reports_invalid_contract(monkeypatch):
+    monkeypatch.setattr(main_module, "MINIMAX_API_KEY", "test-key")
+    printed = []
+
+    def fail_validate_prompt_files():
+        raise ValueError("Invalid S2 prompt s2_system.txt: missing required contract token(s): danger_level")
+
+    def unexpected_delirium_init():
+        raise AssertionError("Delirium should not initialize when prompt validation fails")
+
+    monkeypatch.setattr(main_module, "validate_prompt_files", fail_validate_prompt_files)
+    monkeypatch.setattr(main_module, "Delirium", unexpected_delirium_init)
+    monkeypatch.setattr(main_module.console, "print", lambda *args, **kwargs: printed.append(args))
+
+    try:
+        main_module.main()
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("main() should exit when prompt validation fails")
+
+    assert any("danger_level" in str(arg) for call in printed for arg in call)
+
+
+def test_main_exits_when_prompt_validation_reports_missing_file(monkeypatch):
+    monkeypatch.setattr(main_module, "MINIMAX_API_KEY", "test-key")
+    printed = []
+
+    def fail_validate_prompt_files():
+        raise FileNotFoundError("Missing prompt file(s): s2_system.txt")
+
+    def unexpected_delirium_init():
+        raise AssertionError("Delirium should not initialize when prompt files are missing")
+
+    monkeypatch.setattr(main_module, "validate_prompt_files", fail_validate_prompt_files)
+    monkeypatch.setattr(main_module, "Delirium", unexpected_delirium_init)
+    monkeypatch.setattr(main_module.console, "print", lambda *args, **kwargs: printed.append(args))
+
+    try:
+        main_module.main()
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("main() should exit when prompt files are missing")
+
+    assert any("s2_system.txt" in str(arg) for call in printed for arg in call)

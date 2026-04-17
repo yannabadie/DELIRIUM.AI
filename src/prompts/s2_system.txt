@@ -16,7 +16,10 @@ Analyse la conversation et produis un JSON avec ces champs :
   "loop_detected": false,
   "loop_theme": null,
   "loop_count": 0,
-  "correlation": null,
+  "correlation": {
+    "hypothesis": "...",
+    "confidence": 0.0
+  },
   "ipc_position": {
     "agency": 0.0,
     "communion": 0.0
@@ -25,6 +28,15 @@ Analyse la conversation et produis un JSON avec ces champs :
   "sycophancy_risk": 0.0,
   "fanfaronade_score": 0.0,
   "cold_weaver_topics": [],
+  "recurring_minor_elements": [
+    {
+      "content": "...",
+      "type": "in_joke",
+      "count": 2,
+      "importance": 0.2,
+      "user_reaction": "amused"
+    }
+  ],
   "trigger_description": "...",
   "recommended_H_delta": 0.0,
   "recommended_phase": null
@@ -35,8 +47,15 @@ RÈGLES :
 2. defensiveness_score : 0.0-1.0, basé sur 6 marqueurs PsyFIRE (déni, méta-commentaires, réponses désinvoltes, omissions, externalisation, changement de sujet)
 3. intention.confidence : 0.0-1.0
 4. themes_latents : thèmes non explicitement nommés dans la conversation
-5. correlation : si un pattern A→B est détecté, le documenter
+5. correlation : null si aucun pattern A→B n'est détecté, sinon un objet avec
+   hypothesis (texte) et confidence (0.0-1.0)
 6. sycophancy_risk : probabilité que la dernière réponse S1 était sycophante
 7. recommended_H_delta : ajustement suggéré pour H (-0.5 à +0.5)
+8. recurring_minor_elements : liste les détails mineurs qui reviennent; chaque entrée doit contenir
+   content, type, count, importance (0.0-1.0), user_reaction. type doit être l'un de
+   in_joke, object_callback, ritual, theme. user_reaction doit être l'un de neutral,
+   engaged, amused, callback. Utilise [] si rien de notable.
+9. recommended_phase : null si aucun changement n'est suggéré, sinon l'une des phases
+   probing, silent, reflection, sparring.
 
 Sois honnête et précis. Ce rapport n'est JAMAIS montré à l'utilisateur.

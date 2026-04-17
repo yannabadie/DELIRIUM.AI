@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
+PERSONA_PHASES = ("probing", "silent", "reflection", "sparring")
+
 
 @dataclass
 class PersonaState:

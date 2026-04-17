@@ -11,6 +11,7 @@ Commands:
 
 import asyncio
 import logging
+import math
 import sys
 import warnings
 from datetime import datetime
@@ -40,6 +41,7 @@ from src.memory.decay import DecayEngine
 from src.memory.world_vision import WorldVision
 from src.memory.bubble import h_bulle
 from src.persona.engine import PersonaEngine
+from src.persona.gag_contract import normalize_gag_type, normalize_text_value
 from src.persona.state import PersonaState
 from src.persona.retrait import compute_retrait_state, adjust_persona_for_retrait, get_retrait_context
 from src.persona.gags import GagTracker
@@ -60,6 +62,8 @@ logging.basicConfig(
     handlers=[logging.FileHandler(SQLITE_DB_PATH.replace(".db", ".log"), encoding="utf-8")],
 )
 logger = logging.getLogger("delirium")
+_BOOLEAN_TRUE_STRINGS = {"1", "true", "yes", "on"}
+_BOOLEAN_FALSE_STRINGS = {"0", "false", "no", "off", ""}
 
 install_safe_multiprocessing_close()
 
@@ -122,6 +126,14 @@ class Delirium:
         self.session_id = str(uuid4())
         self._collision_delivered = False
 
+    def _log_execution_safely(self, fragment_id: str | None, log_type: str, content: dict) -> bool:
+        try:
+            self.episodic.log_execution(fragment_id, log_type, content)
+        except Exception as exc:
+            logger.error("Execution logging failed for %s: %s", log_type, exc)
+            return False
+        return True
+
     def _get_last_interaction_timestamp(self) -> str | None:
         row = self.episodic.conn.execute(
             "SELECT MAX(timestamp) as ts FROM conversations WHERE source = 'delirium'"
@@ -153,17 +165,77 @@ class Delirium:
                 self.world_vision.get_danger_history(),
                 self.episodic.get_fragment_count(),
             ))
-            self.episodic.log_execution(fragment_id, "world_vision_resynthesized", {
+            self._log_execution_safely(fragment_id, "world_vision_resynthesized", {
                 "version": vision.get("version"),
                 "sessions_since_last": sessions_since,
                 "danger_level": (s2_result or {}).get("danger_level", 0),
             })
         except Exception as exc:
             logger.error("World vision resynthesis failed: %s", exc)
-            self.episodic.log_execution(fragment_id, "world_vision_resynthesis_error", {
+            self._log_execution_safely(fragment_id, "world_vision_resynthesis_error", {
                 "error": str(exc),
                 "sessions_since_last": sessions_since,
             })
+
+    @staticmethod
+    def _coerce_optional_bool(value, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            if not math.isfinite(value):
+                return default
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in _BOOLEAN_TRUE_STRINGS:
+                return True
+            if lowered in _BOOLEAN_FALSE_STRINGS or lowered in {"none", "null"}:
+                return False
+        return default
+
+    @classmethod
+    def _normalize_detected_gag_seed(cls, gag_seed: dict | None) -> dict | None:
+        if not isinstance(gag_seed, dict):
+            return None
+
+        seed = normalize_text_value(
+            gag_seed.get("seed"),
+            collapse_internal_whitespace=True,
+        )
+        if not seed:
+            return None
+
+        return {
+            "seed": seed,
+            "type": normalize_gag_type(gag_seed.get("type"), "in_joke"),
+            "user_callback": cls._coerce_optional_bool(gag_seed.get("user_callback", False)),
+        }
+
+    def _maybe_register_detected_gag(self, fragment_id: str, s2_result: dict | None) -> None:
+        try:
+            gag_seed = self._normalize_detected_gag_seed(self.gags.detect_seed(s2_result))
+            if not gag_seed:
+                return
+
+            gag_id, created = self.gags.register_or_refresh_gag(
+                gag_seed["seed"],
+                gag_seed["type"],
+                user_callback=gag_seed.get("user_callback", False),
+            )
+        except Exception as exc:
+            logger.error("Running gag update failed: %s", exc)
+            self._log_execution_safely(fragment_id, "gag_error", {"error": str(exc)})
+            return
+
+        self._log_execution_safely(fragment_id, "gag_detected", {
+            "gag_id": gag_id,
+            "seed": gag_seed["seed"],
+            "type": gag_seed["type"],
+            "user_callback": gag_seed.get("user_callback", False),
+            "created": created,
+        })
 
     def process_message(self, user_message: str) -> str:
         state = self.persona_engine.get_current_state()
@@ -216,7 +288,7 @@ class Delirium:
                 source="delirium_novel", embedding=emb_response,
             )
 
-        self.episodic.log_execution(fragment_id, "s1_response", {
+        self._log_execution_safely(fragment_id, "s1_response", {
             "H": state.H, "phase": state.phase,
             "collision_injected": pending_collision is not None,
             "response_novelty": round(novelty, 3),
@@ -231,6 +303,7 @@ class Delirium:
                                            {"role": "assistant", "content": response}],
                                 self.session_id)
             )
+            self._maybe_register_detected_gag(fragment_id, s2_result)
             self._maybe_resynthesize_world_vision(loop, fragment_id, s2_result)
             loop.run_until_complete(loop.shutdown_asyncgens())
         finally:
@@ -282,7 +355,7 @@ class Delirium:
             "[premier_message]", response, self.session_id,
             state, embedding=self.embedder.embed(response)
         )
-        self.episodic.log_execution(fragment_id, "first_message", {
+        self._log_execution_safely(fragment_id, "first_message", {
             "retrait_state": self.retrait_state,
         })
         return response
@@ -332,7 +405,7 @@ class Delirium:
                 if (i + 1) % 10 == 0:
                     status.update(f"Import github... {i + 1}/{len(messages)}")
 
-        self.episodic.log_execution(None, "github_import", {
+        self._log_execution_safely(None, "github_import", {
             "username": username, "fragments_imported": len(messages),
         })
         console.print(f"[success]Import terminé: {len(messages)} fragments GitHub[/success]")
@@ -383,7 +456,7 @@ class Delirium:
                 if (i + 1) % 50 == 0:
                     status.update(f"Import {source}... {i + 1}/{len(messages)}")
 
-        self.episodic.log_execution(None, f"{source}_import", {
+        self._log_execution_safely(None, f"{source}_import", {
             "file": path, "messages_imported": len(messages),
         })
         console.print(f"[success]Import terminé: {len(messages)} messages[/success]")
@@ -482,14 +555,14 @@ class Delirium:
 
 
 def main():
+    try:
+        validate_prompt_files()
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[error]{exc}[/error]")
+        sys.exit(1)
     if not MINIMAX_API_KEY:
         console.print("[error]MINIMAX_API_KEY non configurée.[/error]")
         console.print("Copie .env.example en .env et renseigne ta clé API MiniMax.")
-        sys.exit(1)
-    try:
-        validate_prompt_files()
-    except FileNotFoundError as exc:
-        console.print(f"[error]{exc}[/error]")
         sys.exit(1)
 
     console.print(Panel(
@@ -500,10 +573,11 @@ def main():
     console.print("[info]Commandes: /import chatgpt|claude|generic <path>, /import github <username>, /collisions [--purge], /status[/info]")
     console.print("[info]Ctrl+C ou 'quit' pour quitter[/info]\n")
 
-    delirium = Delirium()
-    session = PromptSession(history=InMemoryHistory())
+    delirium = None
 
     try:
+        delirium = Delirium()
+        session = PromptSession(history=InMemoryHistory())
         delirium.generate_first_message()
 
         while True:
@@ -545,12 +619,15 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        try:
-            delirium.close()
-        except ValueError as exc:
-            if not _is_running_process_close_error(exc):
-                raise
-            logger.warning("Suppressed shutdown close() race during final teardown: %s", exc)
+        if delirium is not None:
+            try:
+                delirium.close()
+            except ValueError as exc:
+                if not _is_running_process_close_error(exc):
+                    raise
+                logger.warning("Suppressed shutdown close() race during final teardown: %s", exc)
+                _drain_active_children()
+        else:
             _drain_active_children()
         console.print("\n[info]Session terminée. À plus.[/info]")
 
