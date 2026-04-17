@@ -32,7 +32,13 @@ from rich.theme import Theme
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
-from src.config import MINIMAX_API_KEY, SQLITE_DB_PATH, validate_prompt_files
+from src.config import (
+    DELIRIUM_DECAY_MODE,
+    DELIRIUM_FORGETTING_STRATEGY,
+    MINIMAX_API_KEY,
+    SQLITE_DB_PATH,
+    validate_prompt_files,
+)
 from src.llm_client import LLMClient, AsyncLLMClient
 from src.memory.episodic import EpisodicMemory
 from src.memory.semantic import SemanticMemory
@@ -102,7 +108,11 @@ class Delirium:
         self.persona_engine = PersonaEngine()
         self.s2 = S2Analyzer(self.async_llm, self.episodic, self.semantic, self.persona_engine)
         self.embedder = get_embedder()
-        self.decay = DecayEngine(self.episodic.conn)
+        self.decay = DecayEngine(
+            self.episodic.conn,
+            mode=DELIRIUM_DECAY_MODE,
+            strategy=DELIRIUM_FORGETTING_STRATEGY,
+        )
         self.world_vision = WorldVision(self.episodic.conn, self.llm)
         self.gags = GagTracker(self.episodic.conn)
 
@@ -239,6 +249,9 @@ class Delirium:
 
     def process_message(self, user_message: str) -> str:
         state = self.persona_engine.get_current_state()
+
+        # Keep retrieval strength moving during active use, not just on app restart.
+        self.decay.apply_decay()
 
         # Reactivate related memories (Bjork re-learning)
         self.decay.reactivate_related(user_message, self.episodic)

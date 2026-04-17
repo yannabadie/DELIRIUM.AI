@@ -81,7 +81,8 @@ class EpisodicMemory:
         for col, typedef in [("source", "TEXT DEFAULT 'delirium'"),
                              ("embedding", "BLOB"),
                              ("sycophancy_score", "REAL"),
-                             ("retrieval_weight", "REAL DEFAULT 1.0")]:
+                             ("retrieval_weight", "REAL DEFAULT 1.0"),
+                             ("last_decay_at", "TEXT")]:
             try:
                 self.conn.execute(f"ALTER TABLE conversations ADD COLUMN {col} {typedef}")
             except sqlite3.OperationalError:
@@ -99,10 +100,11 @@ class EpisodicMemory:
 
         self.conn.execute(
             "INSERT INTO conversations "
-            "(id, session_id, timestamp, user_input, s1_response, source, h_value, phase, embedding, sycophancy_score) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(id, session_id, timestamp, user_input, s1_response, source, h_value, phase, "
+            "embedding, sycophancy_score, last_decay_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (fragment_id, session_id, now, user_message, response,
-             source, persona_state.H, persona_state.phase, emb_bytes, sycophancy_score)
+             source, persona_state.H, persona_state.phase, emb_bytes, sycophancy_score, now)
         )
         # Update FTS index
         self.conn.execute(
@@ -148,12 +150,13 @@ class EpisodicMemory:
             return []
         try:
             rows = self.conn.execute(
-                "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, c.source "
+                "SELECT c.id, c.timestamp, c.user_input, c.s1_response, c.h_value, c.phase, "
+                "c.source, COALESCE(c.retrieval_weight, 1.0) as retrieval_weight "
                 "FROM conversations_fts f "
                 "JOIN conversations c ON c.rowid = f.rowid "
                 "WHERE conversations_fts MATCH ? "
                 "AND COALESCE(c.retrieval_weight, 1.0) >= ? "
-                "ORDER BY rank LIMIT ?",
+                "ORDER BY rank, retrieval_weight DESC, c.timestamp DESC LIMIT ?",
                 (safe_query, min_retrieval_weight, n_results)
             ).fetchall()
             return [dict(r) for r in rows]

@@ -18,6 +18,8 @@ MINIMAX_MODEL_FAST = os.getenv("MINIMAX_MODEL_FAST", "MiniMax-M2.7-highspeed")
 
 # Database
 SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", str(_project_root / "data" / "delirium.db"))
+DELIRIUM_DECAY_MODE = os.getenv("DELIRIUM_DECAY_MODE", "normal")
+DELIRIUM_FORGETTING_STRATEGY = os.getenv("DELIRIUM_FORGETTING_STRATEGY", "decay")
 
 # Prompts
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"

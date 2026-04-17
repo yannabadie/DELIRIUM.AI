@@ -81,11 +81,95 @@ class StubGags:
         return self.register_result
 
 
+def test_delirium_init_uses_configured_forgetting_settings(monkeypatch):
+    decay_calls = []
+    apply_decay_calls = []
+    gag_apply_calls = []
+
+    class SpyDecayEngine:
+        def __init__(self, conn, mode="normal", strategy="decay"):
+            decay_calls.append(
+                {
+                    "conn": conn,
+                    "mode": mode,
+                    "strategy": strategy,
+                }
+            )
+
+        def apply_decay(self):
+            apply_decay_calls.append("decay")
+
+    class StubGagTracker:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def apply_decay(self):
+            gag_apply_calls.append("gags")
+
+    fake_conn = SimpleNamespace(
+        execute=lambda *_args, **_kwargs: SimpleNamespace(
+            fetchone=lambda: {"ts": None}
+        )
+    )
+    fake_saved_state = SimpleNamespace(H=0.4, phase="baseline")
+    persona_engine = SimpleNamespace(
+        set_state=lambda state: None,
+        get_current_state=lambda: fake_saved_state,
+    )
+
+    monkeypatch.setattr(main_module, "LLMClient", lambda: SimpleNamespace())
+    monkeypatch.setattr(main_module, "AsyncLLMClient", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        main_module,
+        "EpisodicMemory",
+        lambda _path: SimpleNamespace(
+            conn=fake_conn,
+            load_latest_persona_state=lambda: fake_saved_state,
+        ),
+    )
+    monkeypatch.setattr(main_module, "SemanticMemory", lambda conn: SimpleNamespace(conn=conn))
+    monkeypatch.setattr(main_module, "WorkingMemory", lambda: SimpleNamespace())
+    monkeypatch.setattr(main_module, "PersonaEngine", lambda: persona_engine)
+    monkeypatch.setattr(
+        main_module,
+        "S2Analyzer",
+        lambda async_llm, episodic, semantic, persona: SimpleNamespace(),
+    )
+    monkeypatch.setattr(main_module, "get_embedder", lambda: SimpleNamespace())
+    monkeypatch.setattr(main_module, "DecayEngine", SpyDecayEngine)
+    monkeypatch.setattr(
+        main_module,
+        "WorldVision",
+        lambda conn, llm: SimpleNamespace(conn=conn, llm=llm),
+    )
+    monkeypatch.setattr(main_module, "GagTracker", StubGagTracker)
+    monkeypatch.setattr(main_module, "compute_retrait_state", lambda _last_ts: "active")
+    monkeypatch.setattr(main_module, "uuid4", lambda: "session-id")
+    monkeypatch.setattr(main_module, "DELIRIUM_DECAY_MODE", "minimal")
+    monkeypatch.setattr(main_module, "DELIRIUM_FORGETTING_STRATEGY", "retrieval_induced")
+
+    delirium = Delirium()
+
+    assert decay_calls == [
+        {
+            "conn": fake_conn,
+            "mode": "minimal",
+            "strategy": "retrieval_induced",
+        }
+    ]
+    assert apply_decay_calls == ["decay"]
+    assert gag_apply_calls == ["gags"]
+    assert delirium.session_id == "session-id"
+
+
 def make_delirium_for_process_tests(gags, s2_result):
     delirium = Delirium.__new__(Delirium)
     state = SimpleNamespace(H=0.2, phase="baseline")
     delirium.persona_engine = SimpleNamespace(get_current_state=lambda: state)
-    delirium.decay = SimpleNamespace(reactivate_related=lambda *args, **kwargs: None)
+    delirium.decay = SimpleNamespace(
+        apply_decay=lambda: None,
+        reactivate_related=lambda *args, **kwargs: None,
+    )
     delirium.episodic = StubEpisodicMemory()
     delirium.semantic = SimpleNamespace(get_active_themes=lambda: [])
     delirium.working = SimpleNamespace(compose_s1_prompt=lambda *args, **kwargs: "s1 prompt")
@@ -174,6 +258,33 @@ def test_process_message_registers_detected_gag_after_s2_analysis(monkeypatch):
             },
         ),
     ]
+
+
+def test_process_message_applies_decay_before_reactivation(monkeypatch):
+    monkeypatch.setattr("src.import_.enricher.enrich_text", lambda text: text)
+    monkeypatch.setattr(main_module, "cosine_similarity", lambda _left, _right: 1.0)
+
+    call_order = []
+
+    def apply_decay():
+        call_order.append("apply_decay")
+
+    def reactivate_related(*_args, **_kwargs):
+        call_order.append("reactivate_related")
+
+    delirium = make_delirium_for_process_tests(
+        StubGags(seed=None),
+        {"danger_level": 0, "recurring_minor_elements": []},
+    )
+    delirium.decay = SimpleNamespace(
+        apply_decay=apply_decay,
+        reactivate_related=reactivate_related,
+    )
+
+    response = delirium.process_message("bonjour")
+
+    assert response == "assistant reply"
+    assert call_order[:2] == ["apply_decay", "reactivate_related"]
 
 
 def test_process_message_logs_gag_error_without_aborting_response(monkeypatch):
