@@ -70,11 +70,20 @@ Priorité absolue : la conversation visible dans `messages` est le fil courant.
             )
 
         # Active themes
-        if active_themes:
-            theme_lines = [f"- {t['label']} (poids: {t['weight']:.1f})" for t in active_themes[:5]]
+        theme_entries = self._normalize_theme_entries(active_themes)
+        if theme_entries:
+            theme_lines = [f"- {entry['label']} (poids: {entry['weight']:.1f})" for entry in theme_entries]
             sections.append(
                 "═══ THÈMES ACTIFS ═══\n" + "\n".join(theme_lines)
             )
+
+        bubble_section = self._build_bubble_break_section(
+            persona_state,
+            active_themes,
+            thread_messages,
+        )
+        if bubble_section:
+            sections.append(bubble_section)
 
         # Running gags
         if gag_context:
@@ -96,6 +105,88 @@ Intègre ça dans la conversation de manière naturelle.
 "Rien à voir mais..." est ton format. Pas de cours, pas de tutorat.""")
 
         return "\n\n".join(sections)
+
+    def _build_bubble_break_section(
+        self,
+        persona_state: PersonaState,
+        active_themes: list[dict],
+        thread_messages: list[dict] | None,
+    ) -> str | None:
+        if not getattr(persona_state, "bubble_break_enabled", False):
+            return None
+
+        risk = getattr(persona_state, "bubble_risk_status", "low_risk")
+        intensity = getattr(persona_state, "bubble_break_intensity", "off")
+        ignore_streak = getattr(persona_state, "bubble_ignore_streak", 0)
+        anchor = self._build_bubble_anchor(
+            self._normalize_theme_entries(active_themes),
+            thread_messages,
+        )
+
+        if intensity == "strong":
+            move = "Crochet net"
+            style = (
+                "Coupe franchement la boucle avec une scene adjacente concrete, "
+                "presque incongrue, puis reviens au fil sans expliquer ta manoeuvre."
+            )
+        else:
+            move = "Crochet leger"
+            style = (
+                "Fais juste un pas de cote: une image ou un detail adjacent qui desserre "
+                "la boucle sans casser la conversation."
+            )
+
+        return (
+            "═══ INJECTION LATÉRALE ANTI-BULLE ═══\n"
+            f"Risque détecté : {risk}\n"
+            f"Ignores consecutifs : {ignore_streak}/3\n"
+            f"{move}.\n"
+            "Forme attendue : commence litteralement par \"Rien à voir mais...\"\n"
+            "Regles : max 1/session, aucune mention de bulle, pas de meta, pas de lecon.\n"
+            f"Angle adjacent suggere : {anchor}\n"
+            f"{style}"
+        )
+
+    def _build_bubble_anchor(
+        self,
+        active_themes: list[dict],
+        thread_messages: list[dict] | None,
+    ) -> str:
+        if active_themes:
+            return (
+                f"prends le theme '{active_themes[0]['label']}' par le cote: "
+                "animal, cuisine, sport, cinema ou histoire des sciences"
+            )
+
+        if thread_messages:
+            user_turns = [
+                self._shorten(item.get("content", ""), limit=90)
+                for item in thread_messages
+                if item.get("role") == "user" and item.get("content", "").strip()
+            ]
+            if user_turns:
+                return (
+                    f"pars du motif recent '{user_turns[-1]}' et ouvre un biais lateral "
+                    "concret venu d'ailleurs"
+                )
+
+        return "prends un detail concret venu d'ailleurs et fais-lui couper la trajectoire"
+
+    def _normalize_theme_entries(self, active_themes: list[dict] | None) -> list[dict]:
+        entries = []
+        for theme in active_themes or []:
+            if not isinstance(theme, dict):
+                continue
+            label = str(theme.get("label", "")).strip()
+            if not label:
+                continue
+            weight = theme.get("weight", 0.0)
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError):
+                weight = 0.0
+            entries.append({"label": label, "weight": weight})
+        return entries[:5]
 
     def _build_visible_thread_summary(self, thread_messages: list[dict] | None) -> str | None:
         if not thread_messages:

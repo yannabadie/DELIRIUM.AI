@@ -17,6 +17,11 @@ class PersonaState:
 
     phase: str = "probing"        # probing | silent | reflection | sparring
     defensiveness_detected: float = 0.0  # PsyFIRE score
+    bubble_risk_score: float = 0.0
+    bubble_risk_status: str = "low_risk"
+    bubble_break_enabled: bool = False
+    bubble_break_intensity: str = "off"
+    bubble_ignore_streak: int = 0
 
     timestamp: datetime = field(default_factory=datetime.now)
     trigger: str = ""             # what caused the change

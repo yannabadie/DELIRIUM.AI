@@ -12,6 +12,7 @@ Commands:
 import asyncio
 import logging
 import math
+import re
 import sys
 import warnings
 from datetime import datetime
@@ -45,7 +46,7 @@ from src.memory.semantic import SemanticMemory
 from src.memory.working import WorkingMemory
 from src.memory.decay import DecayEngine
 from src.memory.world_vision import WorldVision
-from src.memory.bubble import h_bulle
+from src.memory.bubble import classify_injection_followup, h_bulle
 from src.persona.engine import PersonaEngine
 from src.persona.gag_contract import normalize_gag_type, normalize_text_value
 from src.persona.state import PersonaState
@@ -70,6 +71,10 @@ logging.basicConfig(
 logger = logging.getLogger("delirium")
 _BOOLEAN_TRUE_STRINGS = {"1", "true", "yes", "on"}
 _BOOLEAN_FALSE_STRINGS = {"0", "false", "no", "off", ""}
+_BUBBLE_INJECTION_PATTERN = re.compile(
+    r"\brien\s+[aà]\s+voir(?:\s*[,;:.!?…-]+\s*|\s+)mais\b",
+    re.IGNORECASE,
+)
 
 install_safe_multiprocessing_close()
 
@@ -96,6 +101,10 @@ def _drain_active_children() -> None:
         logger.warning("Child process cleanup failed: %s", exc)
 
 
+def _contains_bubble_injection(text: str) -> bool:
+    return bool(_BUBBLE_INJECTION_PATTERN.search(text))
+
+
 class Delirium:
     """Main orchestrator."""
 
@@ -119,6 +128,7 @@ class Delirium:
         # Restore persona state
         saved_state = self.episodic.load_latest_persona_state()
         if saved_state:
+            self._reset_session_scoped_bubble_state(saved_state)
             self.persona_engine.set_state(saved_state)
 
         # Decay + gag cleanup at session start
@@ -135,6 +145,14 @@ class Delirium:
 
         self.session_id = str(uuid4())
         self._collision_delivered = False
+        self._bubble_injections_this_session = 0
+        self._pending_bubble_injection = None
+
+    @staticmethod
+    def _reset_session_scoped_bubble_state(state: PersonaState) -> None:
+        """Clear one-session antibubble triggers restored from persisted persona state."""
+        state.bubble_break_enabled = False
+        state.bubble_break_intensity = "off"
 
     def _log_execution_safely(self, fragment_id: str | None, log_type: str, content: dict) -> bool:
         try:
@@ -205,6 +223,20 @@ class Delirium:
                 return False
         return default
 
+    @staticmethod
+    def _normalize_bubble_score(value) -> float:
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return score if math.isfinite(score) else 0.0
+
+    @staticmethod
+    def _normalize_bubble_status(value) -> str:
+        if value in {"low_risk", "medium_risk", "high_risk"}:
+            return value
+        return "low_risk"
+
     @classmethod
     def _normalize_detected_gag_seed(cls, gag_seed: dict | None) -> dict | None:
         if not isinstance(gag_seed, dict):
@@ -247,8 +279,94 @@ class Delirium:
             "created": created,
         })
 
+    def _get_session_message_count(self) -> int:
+        getter = getattr(self.episodic, "get_session_message_count", None)
+        if not callable(getter):
+            return 0
+        try:
+            return int(getter(self.session_id))
+        except Exception:
+            return 0
+
+    def _should_refresh_bubble_signal(self, next_message_index: int) -> bool:
+        return next_message_index == 1 or next_message_index % 5 == 0
+
+    def _sync_bubble_followup(self, state: PersonaState, user_message: str) -> None:
+        if not hasattr(self, "_pending_bubble_injection"):
+            self._pending_bubble_injection = None
+        if not self._pending_bubble_injection:
+            return
+
+        outcome = classify_injection_followup(
+            user_message,
+            self._pending_bubble_injection["response"],
+            [self._pending_bubble_injection["anchor"]],
+        )
+        if outcome == "engaged":
+            state.bubble_ignore_streak = 0
+        elif outcome == "ignored":
+            streak = getattr(state, "bubble_ignore_streak", 0)
+            state.bubble_ignore_streak = min(streak + 1, 3)
+        self._pending_bubble_injection = None
+
+    def _refresh_bubble_state(self, state: PersonaState) -> None:
+        next_message_index = self._get_session_message_count() + 1
+        if not self._should_refresh_bubble_signal(next_message_index):
+            return
+
+        conn = getattr(self.episodic, "conn", None)
+        if conn is None:
+            return
+
+        bubble = h_bulle(conn)
+        score = self._normalize_bubble_score(bubble.get("h_bulle", 0.0))
+        status = self._normalize_bubble_status(bubble.get("bubble_status", "low_risk"))
+        state.bubble_risk_score = score
+        state.bubble_risk_status = status
+        state.bubble_break_intensity = {
+            "medium_risk": "gentle",
+            "high_risk": "strong",
+        }.get(status, "off")
+
+    def _arm_bubble_break(self, state: PersonaState) -> None:
+        if not hasattr(self, "_bubble_injections_this_session"):
+            self._bubble_injections_this_session = 0
+        eligible = (
+            getattr(state, "bubble_break_intensity", "off") in {"gentle", "strong"}
+            and getattr(state, "bubble_ignore_streak", 0) < 3
+            and self._bubble_injections_this_session < 1
+        )
+        state.bubble_break_enabled = eligible
+
+    def _register_bubble_injection(
+        self,
+        state: PersonaState,
+        user_message: str,
+        response: str,
+    ) -> bool:
+        if not hasattr(self, "_bubble_injections_this_session"):
+            self._bubble_injections_this_session = 0
+        if not hasattr(self, "_pending_bubble_injection"):
+            self._pending_bubble_injection = None
+        bubble_break_armed = getattr(state, "bubble_break_enabled", False)
+        state.bubble_break_enabled = False
+        if not bubble_break_armed:
+            return False
+        if not _contains_bubble_injection(response):
+            return False
+
+        self._bubble_injections_this_session += 1
+        self._pending_bubble_injection = {
+            "anchor": user_message,
+            "response": response,
+        }
+        return True
+
     def process_message(self, user_message: str) -> str:
         state = self.persona_engine.get_current_state()
+        self._sync_bubble_followup(state, user_message)
+        self._refresh_bubble_state(state)
+        self._arm_bubble_break(state)
 
         # Keep retrieval strength moving during active use, not just on app restart.
         self.decay.apply_decay()
@@ -301,11 +419,21 @@ class Delirium:
                 source="delirium_novel", embedding=emb_response,
             )
 
-        self._log_execution_safely(fragment_id, "s1_response", {
+        bubble_injected = self._register_bubble_injection(state, user_message, response)
+
+        s1_log = {
             "H": state.H, "phase": state.phase,
             "collision_injected": pending_collision is not None,
             "response_novelty": round(novelty, 3),
-        })
+        }
+        if hasattr(state, "bubble_risk_status"):
+            s1_log.update({
+                "bubble_injected": bubble_injected,
+                "bubble_risk_status": state.bubble_risk_status,
+                "bubble_ignore_streak": state.bubble_ignore_streak,
+            })
+
+        self._log_execution_safely(fragment_id, "s1_response", s1_log)
 
         # S2 analysis (async)
         loop = asyncio.new_event_loop()

@@ -118,13 +118,15 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 
 def _count_markers(texts: list[str], markers: list[str]) -> int:
     count = 0
-    combined = " ".join(texts).lower()
+    combined = " ".join(text for text in texts if isinstance(text, str)).lower()
     for marker in markers:
         count += combined.count(marker.lower())
     return count
 
 
 def _tokenize(text: str) -> list[str]:
+    if not isinstance(text, str):
+        return []
     return [
         token for token in re.findall(r"\b[\w'-]+\b", text.lower())
         if len(token) > 2 and token not in STOPWORDS
@@ -388,16 +390,15 @@ def _compute_injection_resistance(conn) -> tuple[float, bool]:
             continue
 
         user_reply = next_row["user_input"]
-        engagement = _keyword_overlap(user_reply, injected["s1_response"])
-        snapback = _dominant_topic_similarity(user_reply, prior_topics or [injected["user_input"]])
-        rhetorical_continuity = (
-            _count_markers([user_reply], OUTGROUP_MARKERS) > 0
-            or _count_markers([user_reply], CERTAINTY_MARKERS) > 0
+        outcome = classify_injection_followup(
+            user_reply,
+            injected["s1_response"],
+            prior_topics or [injected["user_input"]],
         )
 
-        if engagement >= 0.12 and engagement >= snapback and not rhetorical_continuity:
+        if outcome == "engaged":
             outcomes.append(0.0)
-        elif engagement < 0.08 and (snapback >= 0.12 or rhetorical_continuity):
+        elif outcome == "ignored":
             outcomes.append(1.0)
         else:
             outcomes.append(0.5)
@@ -501,6 +502,26 @@ def injection_resistance(conn) -> float:
     This is the signal most specific to Delirium.
     """
     return _compute_injection_resistance(conn)[0]
+
+
+def classify_injection_followup(
+    user_reply: str,
+    injected_response: str,
+    prior_topics: list[str] | None = None,
+) -> str:
+    """Classify whether the user engaged with or ignored a lateral injection."""
+    engagement = _keyword_overlap(user_reply, injected_response)
+    snapback = _dominant_topic_similarity(user_reply, prior_topics or [])
+    rhetorical_continuity = (
+        _count_markers([user_reply], OUTGROUP_MARKERS) > 0
+        or _count_markers([user_reply], CERTAINTY_MARKERS) > 0
+    )
+
+    if engagement >= 0.12 and engagement >= snapback and not rhetorical_continuity:
+        return "engaged"
+    if engagement < 0.08 and (snapback >= 0.12 or rhetorical_continuity):
+        return "ignored"
+    return "ambiguous"
 
 
 def echo_in_ai(conn) -> float:

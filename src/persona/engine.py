@@ -57,6 +57,11 @@ class PersonaEngine:
         new.confrontation = current.confrontation
         new.creativity = current.creativity
         new.listen_ratio = current.listen_ratio
+        new.bubble_risk_score = current.bubble_risk_score
+        new.bubble_risk_status = current.bubble_risk_status
+        new.bubble_break_enabled = current.bubble_break_enabled
+        new.bubble_break_intensity = current.bubble_break_intensity
+        new.bubble_ignore_streak = current.bubble_ignore_streak
 
         # === DANGER OVERRIDE ===
         if danger_level >= 2:
