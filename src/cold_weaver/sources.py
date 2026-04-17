@@ -48,7 +48,7 @@ class ArxivSource:
         url = f"{self.ARXIV_API}?search_query=all:{query}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
 
         req = urllib.request.Request(url, headers={"User-Agent": "Delirium-AI/0.1"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             xml_data = resp.read()
 
         root = ET.fromstring(xml_data)

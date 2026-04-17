@@ -10,7 +10,6 @@ different conversations to find cross-project, cross-context collisions.
 import json
 import logging
 import random
-import re
 from collections import defaultdict
 from itertools import combinations
 
@@ -78,7 +77,10 @@ class ColdWeaverEngine:
             )
 
             if score >= DELIVERY_THRESHOLD:
-                connection, quality = self._judge_connection(frag_a, frag_b)
+                judged = self._judge_connection(frag_a, frag_b)
+                if judged is None:
+                    continue
+                connection, quality = judged
 
                 if quality < MIN_CONNECTION_QUALITY:
                     trivial_filtered += 1
@@ -209,7 +211,7 @@ class ColdWeaverEngine:
             )
         logger.info("Stored %d ArXiv papers", len(papers))
 
-    def _judge_connection(self, frag_a: dict, frag_b: dict) -> tuple[str, float]:
+    def _judge_connection(self, frag_a: dict, frag_b: dict) -> tuple[str, float] | None:
         """LLM judges if the connection is non-trivial and describes it."""
         prompt = (
             "Tu es le Cold Weaver de Delirium. Deux idées d'un utilisateur :\n"
@@ -230,7 +232,7 @@ class ColdWeaverEngine:
             return self._parse_judge_response(raw)
         except Exception as e:
             logger.warning("Connection judging failed: %s", e)
-            return f"{frag_a['user_input'][:80]} <-> {frag_b['user_input'][:80]}", 0.5
+            return None
 
     def _parse_judge_response(self, raw: str) -> tuple[str, float]:
         text = raw.strip()
@@ -238,12 +240,19 @@ class ColdWeaverEngine:
             lines = text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines)
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError("Judge response must be a JSON object")
+
+        connection = data.get("connection")
+        quality = data.get("quality")
+
+        if not isinstance(connection, str) or not connection.strip():
+            raise ValueError("Judge response is missing a connection string")
+
         try:
-            data = json.loads(text)
-            connection = data.get("connection", "")
-            quality = float(data.get("quality", 0.0))
-            return connection, max(0.0, min(1.0, quality))
-        except (json.JSONDecodeError, ValueError, TypeError):
-            match = re.search(r"(\d+\.?\d*)", text)
-            quality = float(match.group(1)) if match else 0.5
-            return text[:200], max(0.0, min(1.0, quality))
+            normalized_quality = float(quality)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Judge response is missing a numeric quality") from exc
+
+        return connection.strip(), max(0.0, min(1.0, normalized_quality))
