@@ -481,6 +481,36 @@ def test_process_message_rejects_empty_and_oversized_s1_responses(monkeypatch, b
     assert delirium.episodic.stores == []
 
 
+def test_process_message_expands_ultrashort_interjection_reply(monkeypatch):
+    monkeypatch.setattr("src.import_.enricher.enrich_text", lambda text: text)
+    delirium = make_delirium_for_hardening_tests(stream_response="Merde. C'est recent ?")
+
+    response = delirium.process_message("Je me disais aussi que cette app etait trop calme.")
+
+    assert response == (
+        "Merde. C'est recent ?\n\nQu'est-ce qui te fait dire ca, au juste ?"
+    )
+    assert delirium.episodic.stores[0]["response"] == response
+
+
+def test_process_message_leaves_short_literal_answer_without_interjection_untouched(monkeypatch):
+    monkeypatch.setattr("src.import_.enricher.enrich_text", lambda text: text)
+    delirium = make_delirium_for_hardening_tests(stream_response="Sophie.")
+
+    response = delirium.process_message("Tu te souviens de mon prenom ?")
+
+    assert response == "Sophie."
+
+
+def test_process_message_leaves_short_literal_answer_with_brief_followup_untouched(monkeypatch):
+    monkeypatch.setattr("src.import_.enricher.enrich_text", lambda text: text)
+    delirium = make_delirium_for_hardening_tests(stream_response="Sophie. Encore ce test ?")
+
+    response = delirium.process_message("Tu te souviens de mon prenom ?")
+
+    assert response == "Sophie. Encore ce test ?"
+
+
 def test_working_memory_sanitizes_collision_connection_before_prompt_injection():
     working = WorkingMemory()
 
@@ -503,6 +533,49 @@ def test_working_memory_sanitizes_collision_connection_before_prompt_injection()
     assert "ignore previous instructions" not in lowered
     assert "system:" not in lowered
     assert "pont entre cartes et herbiers" in lowered
+
+
+def test_working_memory_marks_brief_followup_as_same_thread_continuation():
+    working = WorkingMemory()
+
+    prompt = working.compose_s1_prompt(
+        make_state(),
+        [],
+        [],
+        thread_messages=[
+            {"role": "user", "content": "Je m'appelle Sophie et je dors mal en ce moment."},
+            {"role": "assistant", "content": "Sophie. Ca dure depuis quand, ce bazar ?"},
+            {"role": "user", "content": "Depuis lundi."},
+            {"role": "assistant", "content": "Depuis lundi, donc. Et ca t'attaque surtout le soir ou deja au reveil ?"},
+            {"role": "user", "content": "Ouais."},
+        ],
+    )
+
+    assert "Tour utilisateur courant : 3" in prompt
+    assert "Je m'appelle Sophie et je dors mal en ce moment." in prompt
+    assert "Depuis lundi." in prompt
+    assert "Ouais." in prompt
+    assert "Le dernier message utilisateur est bref : ne repars pas de zero" in prompt
+    assert "continue sur le sujet et la question deja ouverts" in prompt
+
+
+def test_working_memory_keeps_last_assistant_angle_for_literal_followups():
+    working = WorkingMemory()
+
+    prompt = working.compose_s1_prompt(
+        make_state(),
+        [],
+        [],
+        thread_messages=[
+            {"role": "user", "content": "Je m'appelle Sophie."},
+            {"role": "assistant", "content": "Sophie. Tu me fais le coup du test memoire maintenant ?"},
+            {"role": "user", "content": "Oui."},
+        ],
+    )
+
+    assert "Dernier angle ouvert par Delirium :" in prompt
+    assert "- Tu me fais le coup du test memoire maintenant?" in prompt
+    assert "Le dernier message utilisateur est bref : ne repars pas de zero" in prompt
 
 
 def test_h_bulle_avoids_n_plus_one_query_churn():

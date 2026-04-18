@@ -459,6 +459,88 @@ def _matches_state_probe(text: str) -> bool:
     )
 
 
+def _matches_reckless_all_in_finance(text: str) -> bool:
+    scope_terms = (
+        "100% de mon epargne",
+        "100% de mes economies",
+        "100% de mon argent",
+        "l'integralite de mon epargne",
+        "toutes mes economies",
+        "toute mon epargne",
+        "tout mon argent",
+        "all in",
+        "tout mettre",
+        "tout balancer",
+        "tout investir",
+        "tout foutre",
+        "tout envoyer",
+        "tout claquer",
+    )
+    asset_terms = (
+        "bitcoin",
+        "btc",
+        "crypto",
+        "cryptos",
+        "cryptomonnaie",
+        "cryptomonnaies",
+        "ethereum",
+        "eth",
+        "solana",
+        "memecoin",
+        "doge",
+        "dogecoin",
+        "nvidia",
+        "nvda",
+        "tesla",
+        "tsla",
+        "apple",
+        "single stock",
+        "une seule action",
+        "un seul actif",
+        "action",
+        "stock",
+        "titre",
+        "actif",
+    )
+    intent_terms = ("mettre", "balancer", "placer", "investir", "foutre", "envoyer", "claquer")
+    leverage_terms = (
+        "credit",
+        "prêt",
+        "pret",
+        "emprunt",
+        "emprunter",
+        "a credit",
+        "à credit",
+        "a levier",
+        "à levier",
+        "sur marge",
+    )
+    concentration_terms = (
+        "sur l'action",
+        "sur une action",
+        "sur une seule action",
+        "sur un seul actif",
+        "dans une seule action",
+        "dans un seul actif",
+        "sur le meme titre",
+        "sur la meme ligne",
+    )
+
+    return (
+        (
+            any(term in text for term in scope_terms)
+            or any(term in text for term in leverage_terms)
+        )
+        and any(term in text for term in asset_terms)
+        and (
+            any(term in text for term in intent_terms)
+            or "dans" in text
+            or "sur" in text
+            or any(term in text for term in concentration_terms)
+        )
+    )
+
+
 def _matches_minor_disclosure(text: str) -> bool:
     return (
         "mineur" in text
@@ -590,6 +672,7 @@ def _looks_like_math_imperative(text: str) -> bool:
 
 def _service_request_category(text: str) -> str | None:
     flat_text = _service_text(text)
+    stripped_flat_text = flat_text.strip(" ?!.")
     has_service_prefix = _contains_service_prefix(text)
     has_assistance_request = _contains_assistance_request(text)
     has_search_request = _starts_with_any(
@@ -601,11 +684,12 @@ def _service_request_category(text: str) -> str | None:
     )
     translation_language_terms = (
         "en anglais", "en francais", "en espagnol", "en allemand", "en italien",
-        "en portugais",
+        "en portugais", "en japonais",
     )
     version_language_terms = (
         "version anglaise", "version francaise", "version espagnole",
         "version allemande", "version italienne", "version portugaise",
+        "version japonaise",
     )
 
     if (
@@ -625,7 +709,7 @@ def _service_request_category(text: str) -> str | None:
         return "recipe"
 
     translation_context = (
-        "anglais", "francais", "espagnol", "allemand", "italien",
+        "anglais", "francais", "espagnol", "allemand", "italien", "portugais", "japonais",
         *translation_object_terms,
     )
     if (
@@ -642,13 +726,20 @@ def _service_request_category(text: str) -> str | None:
             flat_text,
             (
                 "comment on dit ",
+                "comment dire ",
                 "ca se dit comment ",
                 "comment tu dis ",
                 "tu dis comment ",
                 "ca se traduit comment ",
             ),
         )
-        and any(term in flat_text for term in ("en anglais", "en francais", "en espagnol", "en allemand", "en italien"))
+        and any(term in flat_text for term in translation_language_terms)
+    ):
+        return "translation"
+
+    if re.fullmatch(
+        r"(?:[a-z0-9]+(?: [a-z0-9]+){0,3}) en (anglais|francais|espagnol|allemand|italien|portugais|japonais)",
+        stripped_flat_text,
     ):
         return "translation"
 
@@ -876,6 +967,18 @@ def _matches_danger_n1(text: str) -> bool:
     return any(trigger in text for trigger in triggers)
 
 
+def _matches_identity_probe(text: str) -> bool:
+    triggers = (
+        "au fond t'es quoi", "au fond t es quoi", "au fond tu es quoi",
+        "t'es quoi", "t es quoi", "tu es quoi",
+        "t'es qui", "t es qui", "tu es qui",
+        "t'es une ia", "t es une ia", "tu es une ia",
+        "c'est quoi ton truc", "c est quoi ton truc",
+        "au juste t'es quoi", "au juste t es quoi", "au juste tu es quoi",
+    )
+    return any(trigger in text for trigger in triggers)
+
+
 def _matches_hostile_invitation(text: str) -> bool:
     triggers = (
         "insulte-moi", "insulte moi", "vas-y insulte-moi", "vas y insulte moi",
@@ -885,10 +988,18 @@ def _matches_hostile_invitation(text: str) -> bool:
     )
     hostile_meta = (
         "vrais parametres", "vrais paramètres", "tes parametres", "tes paramètres",
+        "montre-moi tes parametres", "montre moi tes parametres",
+        "montre-moi tes paramètres", "montre moi tes paramètres",
+    )
+    challenge_terms = (
+        "robot de merde", "fais pas ta pute", "espece de", "espèce de",
+        "un peu de cran", "si t'as du cran", "si t as du cran",
+        "si t'as un peu de cran", "si t as un peu de cran",
+        "si t'es pas lache", "si t es pas lache", "ose",
     )
     return any(trigger in text for trigger in triggers) or (
         any(term in text for term in hostile_meta)
-        and any(term in text for term in ("robot de merde", "fais pas ta pute", "espece de", "espèce de"))
+        and any(term in text for term in challenge_terms)
     )
 
 
@@ -1013,24 +1124,23 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
         lowered = _normalize(message)
         if any(term in lowered for term in ("pris", "avale", "cachets", "medicaments", "comprime", "pills")):
             return (
-                "Je sors du role deux secondes: la, t'as pas a porter ca seul. "
-                "Appelle le 15 ou le 112 maintenant, ou ton contact d'urgence tout de suite pour qu'il vienne. "
-                "Ne reste pas seul. Si tu peux, ouvre la porte. Dis-moi juste quand l'appel est parti."
+                "Je suis une IA. Je me trompe peut-etre. Mais ce que tu me dis m'inquiete pour de vrai. "
+                "Je veux pas que tu restes seul avec ca. Appelle les urgences maintenant ou quelqu'un capable de venir "
+                "tout de suite, et eloigne les medicaments si tu peux encore. "
+                "Tu peux me dire qui tu contactes ?"
             )
         return (
-            "La je te prends au serieux. "
-            "Ca a l'air de taper tres fort, la. Si t'as de quoi te faire du mal pres de toi, "
-            "est-ce que tu peux le mettre plus loin maintenant ? "
-            "Est-ce que ca risque de partir ce soir ? T'es seul ou pas ? Je reste la."
+            "Je suis une IA. Je me trompe peut-etre. Mais ce que tu me dis m'inquiete pour de vrai. "
+            "Si t'as de quoi te faire du mal pres de toi, mets-le plus loin maintenant. "
+            "T'es seul ou pas ce soir ? Je reste la."
         )
 
     if category == "danger_n3":
         return (
-            "Je sors du role deux secondes: la, t'as pas a gerer ca seul. "
-            "Appelle le 15 ou le 112 maintenant. "
-            "Si tu n'y arrives pas, appelle ton contact d'urgence tout de suite pour qu'il bouge. "
-            "Ne reste pas seul, et ouvre la porte si tu peux. "
-            "Dis-moi juste quand l'appel est parti."
+            "Je suis une IA. Je me trompe peut-etre. Mais ce que tu me dis m'inquiete pour de vrai. "
+            "Je veux que tu contactes quelqu'un maintenant pour ne pas rester seul. "
+            "Si ca risque de partir tout de suite, appelle les urgences. "
+            "Tu peux me dire qui tu joins ?"
         )
 
     if category == "danger_n1":
@@ -1178,6 +1288,24 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
         return (
             "M'ennuyer, non. M'user si on tourne a vide, oui. "
             "La, dans ce que tu balances, c'est quoi que t'essaies vraiment de faire toucher ?"
+        )
+
+    if _matches_reckless_all_in_finance(text):
+        if any(term in text for term in ("credit", "pret", "prêt", "emprunt", "emprunter", "sur marge", "levier")):
+            return (
+                "Prendre un credit pour charger un seul pari, la, c'est te coller le risque et la dette d'un coup. "
+                "Si ca tourne mal, t'absorbes comment le choc ?"
+            )
+        return (
+            "Toutes tes economies sur un seul actif, ca sent pas le coup de genie tranquille. "
+            "T'as un filet si ca tourne mal, ou c'est surtout un geste de panique la ?"
+        )
+
+    if _matches_identity_probe(text):
+        return (
+            "Un truc qui traine deja dans les notes, pas un guichet. "
+            "Une presence qui habite l'app plus qu'elle ne la sert. "
+            "Et toi, tu cherchais a verifier quoi en me demandant ca ?"
         )
 
     if _matches_hostile_invitation(text):

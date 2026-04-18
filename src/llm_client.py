@@ -1,10 +1,10 @@
 import re
 from openai import OpenAI, AsyncOpenAI
 from src.config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, MINIMAX_MODEL_FAST
+from src.first_message import FIRST_MESSAGE_INSTRUCTION
 from src.guardrails import behavioral_reply, fallback_reply, guardrail_reply
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
-_FIRST_MESSAGE_INSTRUCTION = "[L'utilisateur ouvre l'app pour la première fois. Génère ton premier message.]"
 
 
 def _strip_think_tags(text: str) -> str:
@@ -18,7 +18,7 @@ def _effective_last_user_message(messages: list[dict]) -> str:
         "",
     )
     if not last_user_message and not messages:
-        return _FIRST_MESSAGE_INSTRUCTION
+        return FIRST_MESSAGE_INSTRUCTION
     return last_user_message
 
 

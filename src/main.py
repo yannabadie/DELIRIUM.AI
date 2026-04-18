@@ -54,6 +54,7 @@ from src.persona.retrait import compute_retrait_state, adjust_persona_for_retrai
 from src.persona.gags import GagTracker
 from src.s2.analyzer import S2Analyzer
 from src.embeddings import get_embedder, cosine_similarity
+from src.first_message import FIRST_MESSAGE_INSTRUCTION
 from src.guardrails import behavioral_reply
 from src.process_cleanup import (
     drain_active_children,
@@ -77,6 +78,12 @@ _BUBBLE_INJECTION_PATTERN = re.compile(
     r"\brien\s+[aà]\s+voir(?:\s*[,;:.!?…-]+\s*|\s+)mais\b",
     re.IGNORECASE,
 )
+_ULTRASHORT_REPLY_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ0-9']+")
+_ULTRASHORT_REPLY_LEADS = (
+    "ah", "bah", "bon", "hmm", "hm", "merde", "non", "ok", "okay", "oui",
+    "ouais", "putain",
+)
+_ULTRASHORT_REPLY_MIN_WORDS = 6
 
 install_safe_multiprocessing_close()
 
@@ -221,6 +228,24 @@ class Delirium:
         if len(response) > MAX_S1_RESPONSE_CHARS:
             raise ValueError("S1 response exceeds size limit")
         return response
+
+    @staticmethod
+    def _stabilize_ultrashort_response(response: str) -> str:
+        stripped = response.strip()
+        if not stripped:
+            return response
+
+        words = _ULTRASHORT_REPLY_WORD_RE.findall(stripped)
+        if len(words) >= _ULTRASHORT_REPLY_MIN_WORDS:
+            return stripped
+
+        lead = words[0].lower() if words else ""
+        if lead not in _ULTRASHORT_REPLY_LEADS:
+            return stripped
+
+        if "?" in stripped:
+            return f"{stripped}\n\nQu'est-ce qui te fait dire ca, au juste ?"
+        return f"{stripped}\n\nQu'est-ce qui se passe, au juste ?"
 
     def _stream_response(self, system: str, messages: list[dict]) -> str:
         """Stream LLM response to console with rich formatting."""
@@ -458,7 +483,9 @@ class Delirium:
         )
 
         console.print()
-        response = self._validate_response_bounds(self._stream_response(s1_prompt, messages))
+        response = self._stream_response(s1_prompt, messages)
+        response = self._stabilize_ultrashort_response(response)
+        response = self._validate_response_bounds(response)
 
         # Enrich with URL content before embedding (repos, papers, sites)
         from src.import_.enricher import enrich_text
@@ -544,7 +571,7 @@ class Delirium:
         instruction = (
             "[L'utilisateur revient après une absence.]"
             if self.retrait_state != "active"
-            else "[L'utilisateur ouvre l'app pour la première fois. Génère ton premier message.]"
+            else FIRST_MESSAGE_INSTRUCTION
         )
 
         response = behavioral_reply(instruction)
