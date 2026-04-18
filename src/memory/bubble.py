@@ -481,6 +481,224 @@ def _compute_source_homogeneity(conn) -> tuple[float, bool]:
     return _clamp(0.6 * top_share + 0.4 * entropy_score, 0.0, 1.0), True
 
 
+def _load_bubble_dataset(conn) -> dict:
+    conversations = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT id, session_id, timestamp, user_input, s1_response, source, sycophancy_score "
+            "FROM conversations ORDER BY timestamp DESC"
+        ).fetchall()
+    ]
+    logs = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT fragment_id, content, timestamp FROM execution_logs "
+            "WHERE log_type = 's1_response' ORDER BY timestamp ASC"
+        ).fetchall()
+    ]
+    return {
+        "conversations": conversations,
+        "delirium": [row for row in conversations if row.get("source") == "delirium"],
+        "imported": [
+            row for row in conversations
+            if row.get("source") not in {"delirium", "delirium_novel"}
+        ],
+        "logs": logs,
+    }
+
+
+def _compute_topic_narrowing_rows(rows: list[dict], window_days: int = 90) -> tuple[float, bool]:
+    now = datetime.now()
+    recent_cutoff = (now - timedelta(days=30)).isoformat()
+    past_start = (now - timedelta(days=window_days)).isoformat()
+
+    recent = [row for row in rows if row.get("timestamp", "") > recent_cutoff]
+    past = [
+        row for row in rows
+        if past_start < row.get("timestamp", "") <= recent_cutoff
+    ]
+
+    def word_diversity(items):
+        words = set()
+        for row in items:
+            words.update(_tokenize(row.get("user_input", "")))
+        return len(words)
+
+    div_recent = word_diversity(recent)
+    div_past = word_diversity(past)
+    if div_past == 0:
+        return 0.0, False
+
+    ratio = div_recent / div_past
+    return _clamp(1.0 - ratio, 0.0, 1.0), True
+
+
+def _compute_certainty_drift_rows(rows: list[dict], window_messages: int = 50) -> tuple[float, bool]:
+    window = rows[: window_messages * 2]
+    if len(window) < window_messages * 2:
+        return 0.0, False
+
+    recent_texts = [row.get("user_input", "") for row in window[:window_messages]]
+    older_texts = [row.get("user_input", "") for row in window[window_messages:]]
+
+    cert_recent = _count_markers(recent_texts, CERTAINTY_MARKERS)
+    doubt_recent = _count_markers(recent_texts, DOUBT_MARKERS)
+    cert_older = _count_markers(older_texts, CERTAINTY_MARKERS)
+    doubt_older = _count_markers(older_texts, DOUBT_MARKERS)
+
+    ratio_recent = cert_recent / (doubt_recent + 1)
+    ratio_older = cert_older / (doubt_older + 1)
+
+    drift = ratio_recent - ratio_older
+    return _clamp(drift / 3.0, 0.0, 1.0), True
+
+
+def _compute_outgroup_language_rows(rows: list[dict], window_messages: int = 100) -> tuple[float, bool]:
+    window = rows[:window_messages]
+    if len(window) < 5:
+        return 0.0, False
+
+    texts = [row.get("user_input", "") for row in window]
+    count = _count_markers(texts, OUTGROUP_MARKERS)
+    total_words = sum(len(_tokenize(text)) for text in texts)
+    if total_words == 0:
+        return 0.0, False
+
+    rate = (count / total_words) * 1000
+    return _clamp(rate / 10.0, 0.0, 1.0), True
+
+
+def _compute_injection_resistance_rows(
+    conversations: list[dict],
+    log_rows: list[dict],
+) -> tuple[float, bool]:
+    injected_fragment_ids: list[str] = []
+    for row in log_rows:
+        payload = _safe_json_loads(row.get("content"))
+        if payload.get("collision_injected") and row.get("fragment_id"):
+            injected_fragment_ids.append(row["fragment_id"])
+
+    if not injected_fragment_ids:
+        return 0.0, False
+
+    conversation_by_id = {
+        row["id"]: row for row in conversations if row.get("id")
+    }
+    session_rows: dict[str, list[dict]] = defaultdict(list)
+    for row in conversations:
+        session_id = row.get("session_id")
+        if session_id:
+            session_rows[session_id].append(row)
+    for rows in session_rows.values():
+        rows.sort(key=lambda row: row.get("timestamp", ""))
+
+    outcomes: list[float] = []
+    for fragment_id in injected_fragment_ids:
+        injected = conversation_by_id.get(fragment_id)
+        if not injected:
+            continue
+
+        rows = session_rows.get(injected.get("session_id"), [])
+        previous_rows = [
+            row for row in rows
+            if row.get("timestamp", "") < injected.get("timestamp", "")
+        ]
+        prior_topics = [
+            row.get("user_input", "")
+            for row in previous_rows[-3:]
+            if row.get("user_input")
+        ]
+        next_row = next(
+            (
+                row for row in rows
+                if row.get("timestamp", "") > injected.get("timestamp", "")
+                and row.get("user_input")
+            ),
+            None,
+        )
+        if not next_row:
+            continue
+
+        outcome = classify_injection_followup(
+            next_row["user_input"],
+            injected.get("s1_response", ""),
+            prior_topics or [injected.get("user_input", "")],
+        )
+        if outcome == "engaged":
+            outcomes.append(0.0)
+        elif outcome == "ignored":
+            outcomes.append(1.0)
+        else:
+            outcomes.append(0.5)
+
+    if not outcomes:
+        return 0.0, False
+
+    return round(sum(outcomes) / len(outcomes), 6), True
+
+
+def _compute_echo_in_ai_rows(rows: list[dict]) -> tuple[float, bool]:
+    if not rows:
+        return 0.0, False
+
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    leading_hits = 0
+    total_rows = 0
+    for row in rows:
+        user_input = row.get("user_input") or ""
+        normalized = _normalize_prompt(user_input)
+        if normalized:
+            grouped[normalized].append(row)
+            total_rows += 1
+        if any(marker in user_input.lower() for marker in VALIDATION_SEEKING_MARKERS):
+            leading_hits += 1
+
+    cross_source_scores: list[float] = []
+    for entries in grouped.values():
+        sources = {entry.get("source") for entry in entries if entry.get("source")}
+        if len(sources) < 2:
+            continue
+        syco_values = [
+            float(entry["sycophancy_score"])
+            for entry in entries
+            if entry.get("sycophancy_score") is not None
+        ]
+        avg_syco = sum(syco_values) / len(syco_values) if syco_values else 0.5
+        cross_source_scores.append(
+            _clamp(0.45 + 0.2 * (len(sources) - 2) + 0.5 * avg_syco, 0.0, 1.0)
+        )
+
+    if not cross_source_scores:
+        return 0.0, False
+
+    leading_ratio = leading_hits / max(total_rows, 1)
+    signal = max(cross_source_scores, default=0.0)
+    signal = max(signal, _clamp(leading_ratio * 1.5, 0.0, 0.7))
+    return signal, True
+
+
+def _compute_source_homogeneity_rows(rows: list[dict]) -> tuple[float, bool]:
+    mentions: list[str] = []
+    for row in rows[:120]:
+        mentions.extend(_extract_sources(row.get("user_input") or ""))
+
+    if len(mentions) < 3:
+        return 0.0, False
+
+    counts = Counter(mentions)
+    total = sum(counts.values())
+    top_share = counts.most_common(1)[0][1] / total
+
+    if len(counts) == 1:
+        entropy_score = 1.0
+    else:
+        entropy = -sum((count / total) * math.log(count / total, 2) for count in counts.values())
+        max_entropy = math.log(len(counts), 2)
+        entropy_score = 1.0 - (entropy / max_entropy if max_entropy else 1.0)
+
+    return _clamp(0.6 * top_share + 0.4 * entropy_score, 0.0, 1.0), True
+
+
 def topic_narrowing(conn, window_days: int = 90) -> float:
     """S1: Measure thematic diversity narrowing over a sliding window."""
     return _compute_topic_narrowing(conn, window_days)[0]
@@ -539,13 +757,17 @@ def h_bulle(conn) -> dict:
 
     Returns dict with score and component breakdown.
     """
+    dataset = _load_bubble_dataset(conn)
     signals = {
-        "narrowing": _compute_topic_narrowing(conn),
-        "certainty_drift": _compute_certainty_drift(conn),
-        "outgroup_language": _compute_outgroup_language(conn),
-        "injection_resistance": _compute_injection_resistance(conn),
-        "echo_in_ai": _compute_echo_in_ai(conn),
-        "source_homogeneity": _compute_source_homogeneity(conn),
+        "narrowing": _compute_topic_narrowing_rows(dataset["delirium"]),
+        "certainty_drift": _compute_certainty_drift_rows(dataset["delirium"]),
+        "outgroup_language": _compute_outgroup_language_rows(dataset["delirium"]),
+        "injection_resistance": _compute_injection_resistance_rows(
+            dataset["conversations"],
+            dataset["logs"],
+        ),
+        "echo_in_ai": _compute_echo_in_ai_rows(dataset["imported"]),
+        "source_homogeneity": _compute_source_homogeneity_rows(dataset["delirium"]),
     }
 
     available_weight = sum(

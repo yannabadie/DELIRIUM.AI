@@ -76,6 +76,15 @@ class EpisodicMemory:
 
             CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts
                 USING fts5(user_input, s1_response, content=conversations, content_rowid=rowid);
+
+            CREATE INDEX IF NOT EXISTS idx_conv_session
+            ON conversations(session_id);
+
+            CREATE INDEX IF NOT EXISTS idx_conv_source_ts
+            ON conversations(source, timestamp DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_execlog_frag
+            ON execution_logs(fragment_id);
         """)
         # Migrate: add columns if they don't exist (for DBs created in Phase 1)
         for col, typedef in [("source", "TEXT DEFAULT 'delirium'"),

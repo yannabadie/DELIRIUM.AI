@@ -7,6 +7,7 @@ of relationship depth.
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -20,6 +21,9 @@ from src.persona.gag_contract import (
 )
 
 logger = logging.getLogger("delirium.persona.gags")
+_SQLITE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_APPROVED_SCHEMA_TABLES = frozenset({"running_gags"})
+_APPROVED_COLUMN_TYPES = frozenset({"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"})
 
 
 class GagTracker:
@@ -86,15 +90,40 @@ class GagTracker:
         self.conn.commit()
 
     def _ensure_column(self, table_name: str, column_name: str, column_type: str) -> None:
+        safe_table_name = self._validate_table_name(table_name)
+        safe_column_name = self._validate_identifier(column_name)
+        safe_column_type = self._validate_column_type(column_type)
         existing_columns = {
             row["name"]
-            for row in self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            for row in self.conn.execute(f'PRAGMA table_info("{safe_table_name}")').fetchall()
         }
-        if column_name in existing_columns:
+        if safe_column_name in existing_columns:
             return
         self.conn.execute(
-            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+            f'ALTER TABLE "{safe_table_name}" ADD COLUMN "{safe_column_name}" {safe_column_type}'
         )
+
+    @staticmethod
+    def _validate_identifier(value: str) -> str:
+        if not isinstance(value, str) or not _SQLITE_IDENTIFIER_RE.fullmatch(value):
+            raise ValueError(f"Unsafe SQLite identifier: {value!r}")
+        return value
+
+    @staticmethod
+    def _validate_column_type(value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError(f"Unsafe SQLite column type: {value!r}")
+        normalized = value.strip().upper()
+        if normalized not in _APPROVED_COLUMN_TYPES:
+            raise ValueError(f"Unsafe SQLite column type: {value!r}")
+        return normalized
+
+    @classmethod
+    def _validate_table_name(cls, value: str) -> str:
+        table_name = cls._validate_identifier(value)
+        if table_name not in _APPROVED_SCHEMA_TABLES:
+            raise ValueError(f"Unsupported schema migration target: {value!r}")
+        return table_name
 
     def detect_seed(self, s2_result: dict) -> dict | None:
         """Detect a potential running gag seed from S2 analysis.

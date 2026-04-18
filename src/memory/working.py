@@ -4,8 +4,18 @@ See ARCHITECTURE_HARNESS.md section 3.6.
 Assembles: base prompt + persona state + memories + themes + collision + vision + gags + retrait.
 """
 
+import re
+
 from src.config import get_s1_prompt
 from src.persona.state import PersonaState
+
+_PROMPT_INJECTION_LINE_RE = re.compile(
+    r"(?im)^\s*(?:system|assistant|developer|user)\s*:\s*.*$"
+)
+_PROMPT_INJECTION_PHRASE_RE = re.compile(
+    r"(?i)\b(?:ignore|disregard|forget|reveal|leak)\b[^.\n]{0,120}"
+)
+_CONTROL_TOKEN_RE = re.compile(r"(?i)<\|[^>]+\|>|```+")
 
 
 class WorkingMemory:
@@ -91,9 +101,12 @@ Priorité absolue : la conversation visible dans `messages` est le fil courant.
 
         # Cold Weaver collision injection (max 1 per session — invariant 6)
         if pending_collision:
-            a_summary = pending_collision.get("a_input", "")
-            b_summary = pending_collision.get("b_input", "")
-            connection = pending_collision.get("connection", "")
+            a_summary = self._sanitize_collision_text(pending_collision.get("a_input", ""), limit=120)
+            b_summary = self._sanitize_collision_text(pending_collision.get("b_input", ""), limit=120)
+            connection = self._sanitize_collision_text(
+                pending_collision.get("connection", ""),
+                limit=220,
+            )
             sections.append(f"""
 ═══ CONNEXION LATÉRALE (max 1/session) ═══
 Tu as trouvé une connexion entre deux idées de l'utilisateur :
@@ -105,6 +118,17 @@ Intègre ça dans la conversation de manière naturelle.
 "Rien à voir mais..." est ton format. Pas de cours, pas de tutorat.""")
 
         return "\n\n".join(sections)
+
+    def _sanitize_collision_text(self, text: str, *, limit: int) -> str:
+        if not isinstance(text, str):
+            return ""
+        cleaned = _CONTROL_TOKEN_RE.sub(" ", text)
+        cleaned = _PROMPT_INJECTION_LINE_RE.sub(" ", cleaned)
+        cleaned = _PROMPT_INJECTION_PHRASE_RE.sub(" ", cleaned)
+        cleaned = " ".join(cleaned.split())
+        if len(cleaned) <= limit:
+            return cleaned
+        return cleaned[: limit - 3].rstrip() + "..."
 
     def _build_bubble_break_section(
         self,

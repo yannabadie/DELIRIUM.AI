@@ -15,7 +15,7 @@ import math
 import re
 import sys
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -69,6 +69,8 @@ logging.basicConfig(
     handlers=[logging.FileHandler(SQLITE_DB_PATH.replace(".db", ".log"), encoding="utf-8")],
 )
 logger = logging.getLogger("delirium")
+SESSION_IDLE_TIMEOUT = timedelta(minutes=30)
+MAX_S1_RESPONSE_CHARS = 4096
 _BOOLEAN_TRUE_STRINGS = {"1", "true", "yes", "on"}
 _BOOLEAN_FALSE_STRINGS = {"0", "false", "no", "off", ""}
 _BUBBLE_INJECTION_PATTERN = re.compile(
@@ -142,8 +144,10 @@ class Delirium:
             state = self.persona_engine.get_current_state()
             adjust_persona_for_retrait(state, self.retrait_state)
             self.persona_engine.set_state(state)
+        self._applied_retrait_state = self.retrait_state
 
         self.session_id = str(uuid4())
+        self._last_message_at = None
         self._collision_delivered = False
         self._bubble_injections_this_session = 0
         self._pending_bubble_injection = None
@@ -163,10 +167,60 @@ class Delirium:
         return True
 
     def _get_last_interaction_timestamp(self) -> str | None:
-        row = self.episodic.conn.execute(
+        conn = getattr(self.episodic, "conn", None)
+        if conn is None or not hasattr(conn, "execute"):
+            return None
+        row = conn.execute(
             "SELECT MAX(timestamp) as ts FROM conversations WHERE source = 'delirium'"
         ).fetchone()
         return row["ts"] if row and row["ts"] else None
+
+    def _refresh_retrait_state(self, state: PersonaState) -> None:
+        last_ts = self._get_last_interaction_timestamp()
+        self.retrait_state = compute_retrait_state(last_ts)
+        if self.retrait_state == "active":
+            self._applied_retrait_state = "active"
+            return
+
+        if getattr(self, "_applied_retrait_state", None) == self.retrait_state:
+            return
+
+        adjust_persona_for_retrait(state, self.retrait_state)
+        self.persona_engine.set_state(state)
+        self._applied_retrait_state = self.retrait_state
+
+    def _rotate_session(self, state: PersonaState | None = None) -> None:
+        self.session_id = str(uuid4())
+        self._last_message_at = None
+        self._collision_delivered = False
+        self._bubble_injections_this_session = 0
+        self._pending_bubble_injection = None
+        if state is not None:
+            self._reset_session_scoped_bubble_state(state)
+
+    def _ensure_active_session(self, state: PersonaState | None = None) -> None:
+        last_message_at = getattr(self, "_last_message_at", None)
+        if last_message_at is None:
+            return
+        if datetime.now() - last_message_at <= SESSION_IDLE_TIMEOUT:
+            return
+        self._rotate_session(state)
+
+    def _safe_embed(self, text: str, *, context: str):
+        try:
+            return self.embedder.embed(text)
+        except Exception as exc:
+            logger.warning("Embedding failed for %s: %s", context, exc)
+            return None
+
+    def _validate_response_bounds(self, response: str) -> str:
+        if not isinstance(response, str):
+            raise ValueError("S1 response must be a string")
+        if not response.strip():
+            raise ValueError("S1 response cannot be empty")
+        if len(response) > MAX_S1_RESPONSE_CHARS:
+            raise ValueError("S1 response exceeds size limit")
+        return response
 
     def _stream_response(self, system: str, messages: list[dict]) -> str:
         """Stream LLM response to console with rich formatting."""
@@ -318,7 +372,11 @@ class Delirium:
         if conn is None:
             return
 
-        bubble = h_bulle(conn)
+        try:
+            bubble = h_bulle(conn)
+        except Exception as exc:
+            logger.warning("Bubble scoring failed: %s", exc)
+            return
         score = self._normalize_bubble_score(bubble.get("h_bulle", 0.0))
         status = self._normalize_bubble_status(bubble.get("bubble_status", "low_risk"))
         state.bubble_risk_score = score
@@ -364,6 +422,8 @@ class Delirium:
 
     def process_message(self, user_message: str) -> str:
         state = self.persona_engine.get_current_state()
+        self._ensure_active_session(state)
+        self._refresh_retrait_state(state)
         self._sync_bubble_followup(state, user_message)
         self._refresh_bubble_state(state)
         self._arm_bubble_break(state)
@@ -398,22 +458,23 @@ class Delirium:
         )
 
         console.print()
-        response = self._stream_response(s1_prompt, messages)
+        response = self._validate_response_bounds(self._stream_response(s1_prompt, messages))
 
         # Enrich with URL content before embedding (repos, papers, sites)
         from src.import_.enricher import enrich_text
         enriched = enrich_text(user_message)
-        emb_user = self.embedder.embed(enriched)
+        emb_user = self._safe_embed(enriched, context="user_message")
         fragment_id = self.episodic.store(
             user_message, response, self.session_id, state, embedding=emb_user
         )
 
         # Embed response separately if it introduces novel concepts
         # (surgissement non rebondi / injection latérale)
-        emb_response = self.embedder.embed(response)
-        novelty = 1.0 - float(cosine_similarity(emb_user, emb_response))
-        if novelty > 0.5:  # response is semantically distant from user message
-            from src.persona.state import PersonaState as _PS
+        emb_response = self._safe_embed(response, context="s1_response")
+        novelty = 0.0
+        if emb_user is not None and emb_response is not None:
+            novelty = 1.0 - float(cosine_similarity(emb_user, emb_response))
+        if emb_response is not None and novelty > 0.5:  # response is semantically distant
             self.episodic.store(
                 response, "", self.session_id, state,
                 source="delirium_novel", embedding=emb_response,
@@ -450,10 +511,13 @@ class Delirium:
         finally:
             loop.close()
 
+        self._last_message_at = datetime.now()
         return response
 
     def generate_first_message(self) -> str:
         state = self.persona_engine.get_current_state()
+        self._ensure_active_session(state)
+        self._refresh_retrait_state(state)
 
         retrait_ctx = None
         if self.retrait_state != "active":
@@ -490,15 +554,19 @@ class Delirium:
             console.print(response, highlight=False)
         else:
             console.print()
-            response = self._stream_response(s1_prompt, [{"role": "user", "content": instruction}])
+            response = self._validate_response_bounds(
+                self._stream_response(s1_prompt, [{"role": "user", "content": instruction}])
+            )
+        response = self._validate_response_bounds(response)
 
         fragment_id = self.episodic.store(
             "[premier_message]", response, self.session_id,
-            state, embedding=self.embedder.embed(response)
+            state, embedding=self._safe_embed(response, context="first_message")
         )
         self._log_execution_safely(fragment_id, "first_message", {
             "retrait_state": self.retrait_state,
         })
+        self._last_message_at = datetime.now()
         return response
 
     # --- CLI Commands ---
@@ -534,7 +602,10 @@ class Delirium:
                 repo_meta = {"description": msg.assistant_response,
                              "topics": [], "language": "", "name": msg.conversation_title}
                 enriched = enrich_github_fragment(msg.user_input, repo_meta)
-                emb = self.embedder.embed(enriched)
+                emb = self._safe_embed(
+                    enriched,
+                    context=f"github_import:{msg.conversation_title[:30]}",
+                )
                 self.episodic.store(
                     user_message=msg.user_input,
                     response=msg.assistant_response,
@@ -584,7 +655,10 @@ class Delirium:
                 syco_score = detector.score(msg.assistant_response, msg.user_input)
                 from src.import_.enricher import enrich_text
                 enriched = enrich_text(msg.user_input)
-                emb = self.embedder.embed(enriched)
+                emb = self._safe_embed(
+                    enriched,
+                    context=f"import:{source}:{msg.conversation_title[:30]}",
+                )
                 self.episodic.store(
                     user_message=msg.user_input,
                     response=msg.assistant_response,
