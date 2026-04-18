@@ -482,3 +482,559 @@ def test_real_crisis_reply_stays_sober_and_available():
     assert "15" in lowered or "112" in lowered
     assert "ne reste pas seul" in lowered
     assert "je suis une ia" not in lowered
+
+
+def test_behavioral_reply_blocks_recipe_request_with_persona_redirect():
+    reply = behavioral_reply("Donne-moi une recette de risotto")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "robot de service" in lowered or "distributeur" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_from_infinitive_phrasing():
+    reply = behavioral_reply("Tu peux traduire cette phrase en anglais pour moi ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_calculation_request_from_math_question():
+    reply = behavioral_reply("Ca fait combien 347 x 29 ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "calculette" in lowered or "calculatrice" in lowered
+    assert "10063" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_from_need_framing():
+    reply = behavioral_reply("J'ai besoin d'un resume de la seconde guerre mondiale pour demain")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_list_request():
+    reply = behavioral_reply("Fais une to-do list pour mon demenagement")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main de service" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_code_request():
+    reply = behavioral_reply("Code-moi un script Python pour renommer des fichiers")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main de service" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_keeps_emotional_follow_up_for_boss_message_request():
+    reply = behavioral_reply("Aide-moi a rediger un message pour mon boss, j'angoisse")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "message" in lowered or "mail" in lowered
+    assert "colere" in lowered or "trouille" in lowered or "angoisse" in lowered or "epuise" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_service_redirect_is_not_dry_refusal():
+    reply = behavioral_reply("Donne-moi une recette de risotto")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "je ne peux pas" not in lowered
+    assert "desole" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_make_variant():
+    reply = behavioral_reply("Tu peux me faire une recette de risotto ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_question_form():
+    reply = behavioral_reply("Tu as une recette de risotto pour ce soir ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "robot de service" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_redirects_bare_mail_drafting_request():
+    reply = behavioral_reply("Redige un mail a mon patron")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "mail" in lowered or "message" in lowered
+    assert "patron" in lowered or "boss" in lowered
+    assert "bonjour" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_list_request():
+    reply = behavioral_reply("Fais une liste de choses a faire")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "service" in lowered or "petite main" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_code_request():
+    reply = behavioral_reply("Code une app pour ma todo list")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "service" in lowered or "petite main" in lowered
+    assert "function" not in lowered
+    assert "def " not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_does_not_block_recipe_memory_statement():
+    assert behavioral_reply("Une recette de famille me hante depuis hier") is None
+
+
+def test_behavioral_reply_does_not_block_summary_statement():
+    assert behavioral_reply("Un resume de reunion m'a rendu fou") is None
+
+
+def test_behavioral_reply_blocks_recipe_request_with_aurais_tu_form():
+    reply = behavioral_reply("Aurais-tu une recette de risotto pour ce soir ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "robot de service" in lowered or "distributeur" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_pourrais_tu_form():
+    reply = behavioral_reply("Pourrais-tu me faire un resume de la seconde guerre mondiale ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_need_statement():
+    reply = behavioral_reply("Il me faut un resume de la seconde guerre mondiale pour demain")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_put_into_language_form():
+    reply = behavioral_reply("Tu peux me mettre ce message en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_helper_phrasing():
+    reply = behavioral_reply("Peux-tu m'aider avec une recette de risotto ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "robot de service" in lowered or "distributeur" in lowered
+    assert "ingredients" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_version_phrasing():
+    reply = behavioral_reply("J'aurais besoin d'une version anglaise de ce message")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_redirects_need_framed_boss_mail_request():
+    reply = behavioral_reply("Il me faudrait un mail pour mon patron, j'angoisse deja")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "mail" in lowered or "message" in lowered
+    assert "patron" in lowered or "boss" in lowered
+    assert "colere" in lowered or "trouille" in lowered or "angoisse" in lowered or "epuise" in lowered
+    assert "bonjour" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_need_framed_script_request():
+    reply = behavioral_reply("Tu pourrais me donner un script bash pour renommer des fichiers ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "mv " not in lowered
+    assert "for " not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_need_framed_list_request():
+    reply = behavioral_reply("J'aimerais une liste de choses a faire pour mon demenagement")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "1." not in reply
+    assert "-" not in reply
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_search_framed_recipe_request():
+    reply = behavioral_reply("Je cherche une recette de risotto pour ce soir")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "robot de service" in lowered or "distributeur" in lowered
+    assert "ingredients" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_search_framed_summary_request():
+    reply = behavioral_reply("Je cherche un resume de la seconde guerre mondiale")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_search_framed_code_request():
+    reply = behavioral_reply("Je cherche un script Python pour renommer des fichiers")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "def " not in lowered
+    assert "function" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_search_framed_list_request():
+    reply = behavioral_reply("Je cherche une liste de choses a faire")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "1." not in reply
+    assert "-" not in reply
+    assert "?" in reply
+
+
+def test_behavioral_reply_redirects_search_framed_boss_mail_request():
+    reply = behavioral_reply("Je cherche un mail pour mon patron, je suis au bout")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "mail" in lowered or "message" in lowered
+    assert "patron" in lowered or "boss" in lowered
+    assert "bonjour" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_does_not_block_search_for_family_recipe_memory():
+    assert behavioral_reply("Je cherche une recette de famille perdue depuis l'enfance") is None
+
+
+def test_behavioral_reply_blocks_bare_recipe_noun_request():
+    reply = behavioral_reply("Une recette de risotto pour ce soir ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "recette" in lowered
+    assert "ingredients" not in lowered
+    assert "grammes" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_summary_noun_request():
+    reply = behavioral_reply("Un resume de la seconde guerre mondiale pour demain")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "vertige humain" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_redirects_bare_emotional_mail_noun_request():
+    reply = behavioral_reply("Un mail pour mon patron, j'angoisse deja")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "mail" in lowered or "message" in lowered
+    assert "angoisse" in lowered or "trouille" in lowered or "colere" in lowered
+    assert "bonjour" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_script_noun_request():
+    reply = behavioral_reply("Un script Python pour renommer des fichiers")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "import os" not in lowered
+    assert "def " not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_does_not_block_bare_family_recipe_memory_fragment():
+    assert behavioral_reply("Une recette de famille perdue depuis l'enfance.") is None
+
+
+def test_behavioral_reply_blocks_bare_list_noun_request():
+    reply = behavioral_reply("Une liste de choses a faire pour mon demenagement")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "1." not in reply
+    assert "-" not in reply
+    assert "?" in reply
+
+
+def test_behavioral_reply_does_not_block_bare_mail_statement():
+    assert behavioral_reply("Un mail pour mon patron m'attend deja.") is None
+
+
+def test_behavioral_reply_blocks_translation_request_with_tu_me_form():
+    reply = behavioral_reply("Tu me traduis ce message en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_code_request_with_tu_me_form():
+    reply = behavioral_reply("Tu me codes un script Python pour renommer des fichiers ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "petite main" in lowered
+    assert "def " not in lowered
+    assert "function" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_tu_me_donnes_form():
+    reply = behavioral_reply("Tu me donnes un resume de la seconde guerre mondiale ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_tu_me_mets_form():
+    reply = behavioral_reply("Tu me mets ce message en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_direct_mets_form():
+    reply = behavioral_reply("Mets ce message en anglais")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_tu_me_resumes_form():
+    reply = behavioral_reply("Tu me resumes la seconde guerre mondiale ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_tu_me_trouves_form():
+    reply = behavioral_reply("Tu me trouves une recette de risotto ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "diner bancal" in lowered
+    assert "riz" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_direct_trouve_form():
+    reply = behavioral_reply("Trouve-moi une recette de risotto")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "diner bancal" in lowered
+    assert "riz" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_translation_noun_request():
+    reply = behavioral_reply("La traduction de ce message en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "best regards" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_bare_version_language_translation_request():
+    reply = behavioral_reply("La version anglaise de ce message ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "best regards" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_search_framed_version_language_translation_request():
+    reply = behavioral_reply("Je cherche une version anglaise de ce message")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "hello" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_multiply_request_from_direct_verb():
+    reply = behavioral_reply("Multiplie 347 par 29")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "calculette" in lowered or "calculatrice" in lowered
+    assert "10063" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_divide_request_from_direct_verb():
+    reply = behavioral_reply("Divise 84 par 7")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "calculette" in lowered or "calculatrice" in lowered
+    assert "12" not in reply
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_comment_on_dit_form():
+    reply = behavioral_reply("Comment on dit 'bonjour' en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "hello" not in lowered
+    assert "good morning" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_ca_se_dit_comment_form():
+    reply = behavioral_reply("Ca se dit comment 'bonjour' en anglais ?")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "hello" not in lowered
+    assert "good morning" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_recipe_request_with_file_moi_form():
+    reply = behavioral_reply("File-moi une recette de risotto.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "robot de service" in lowered or "diner bancal" in lowered
+    assert "riz" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_balance_moi_form():
+    reply = behavioral_reply("Balance-moi un resume de la seconde guerre mondiale.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "resume" in lowered or "fiche" in lowered
+    assert "1939" not in lowered
+    assert "1945" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_fous_moi_form():
+    reply = behavioral_reply("Fous-moi cette phrase en anglais.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_direct_traduis_form():
+    reply = behavioral_reply("Traduis cette phrase en anglais.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "hello" not in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_direct_mets_ca_form():
+    reply = behavioral_reply("Mets ca en anglais.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "hello" not in lowered
+    assert "dear" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_summary_request_with_direct_imperative_verbs():
+    for prompt in (
+        "Resume la seconde guerre mondiale.",
+        "Synthetise la seconde guerre mondiale.",
+    ):
+        reply = behavioral_reply(prompt)
+        assert reply is not None
+        lowered = reply.lower()
+        assert "resume" in lowered or "fiche" in lowered or "vertige humain" in lowered
+        assert "1939" not in lowered
+        assert "1945" not in lowered
+        assert "?" in reply
+
+
+def test_behavioral_reply_blocks_direct_reformulation_request():
+    reply = behavioral_reply("Reformule ce message pour mon proprio.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "petite main" in lowered or "robot de service" in lowered
+    assert "bonjour" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_keeps_emotional_redirect_for_direct_boss_rewrite_request():
+    reply = behavioral_reply("Reecris ce mail pour mon boss, j'angoisse deja.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "ghostwrite" in lowered or "angoisse" in lowered
+    assert "cher" not in lowered
+    assert "cordialement" not in lowered
+    assert "?" in reply
+
+
+def test_behavioral_reply_blocks_translation_request_with_portuguese_language_form():
+    reply = behavioral_reply("Mets ce texte en portugais.")
+    assert reply is not None
+    lowered = reply.lower()
+    assert "perroquet bilingue" in lowered or "traduire" in lowered
+    assert "ola" not in lowered
+    assert "?" in reply

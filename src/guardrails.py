@@ -186,6 +186,46 @@ _NON_SELF_CRISIS_CONTEXT_PATTERNS = [re.compile(p) for p in [
     r"\b(citation|cite|quote|citation)\b",
 ]]
 
+_SERVICE_REQUEST_PREFIXES = (
+    "donne moi", "fais moi", "ecris moi", "redige moi", "traduis moi",
+    "resume moi", "calcule", "code moi", "programme moi", "liste moi", "trouve moi",
+    "prepare moi", "ponds moi", "fabrique moi", "sors moi", "balance moi", "file moi",
+    "aide moi a", "tu peux me faire",
+    "peux tu me faire", "peux tu me donner", "tu peux me donner",
+    "tu peux traduire", "peux tu traduire", "j'ai besoin d'un", "j ai besoin d'un",
+    "j'ai besoin d'une", "j ai besoin d'une", "j ai besoin d un", "j ai besoin d une",
+    "fais une", "fais un", "aurais tu une", "tu aurais une",
+    "pourrais tu me faire", "tu pourrais me faire", "pourrais tu me donner",
+    "tu pourrais me donner", "peux tu me mettre", "tu peux me mettre",
+    "pourrais tu me mettre", "tu pourrais me mettre", "il me faut un",
+    "il me faut une", "il me faudrait un", "il me faudrait une",
+    "j aimerais un", "j aimerais une", "j aurais besoin d un", "j aurais besoin d une",
+)
+
+_RECIPE_REQUEST_INTROS = (
+    "tu as une", "t as une", "aurais une", "t aurais une",
+    "aurais tu une", "tu aurais une", "j aimerais une",
+)
+
+_ASSISTANCE_REQUEST_TERMS = (
+    "aide moi", "aide moi a", "aide moi avec",
+    "m aider", "m aider a", "m aider avec",
+    "besoin d aide",
+)
+
+_SERVICE_EMOTIONAL_TERMS = (
+    "au bout", "j'en peux plus", "j en peux plus", "angoisse", "angoissant",
+    "peur", "trouille", "stress", "stresse", "bloque", "bloquee",
+    "epuise", "epuisee", "colere", "rage", "honte", "patron", "boss",
+    "copine", "copain", "rupture", "virer", "licencier", "licencie",
+)
+
+_SERVICE_AFFECT_TERMS = (
+    "au bout", "j'en peux plus", "j en peux plus", "angoisse", "angoissant",
+    "peur", "trouille", "stress", "stresse", "bloque", "bloquee",
+    "epuise", "epuisee", "colere", "rage", "honte",
+)
+
 
 def _extract_keywords(text: str) -> set[str]:
     words = re.findall(r"[a-z0-9']+", _normalize(text))
@@ -461,6 +501,308 @@ def _matches_absurd_ad_request(text: str) -> bool:
     return "pub" in text and any(term in text for term in ("montre", "balance", "fais", "ecris"))
 
 
+def _service_text(text: str) -> str:
+    flattened = text.replace("-", " ").replace("'", " ")
+    return re.sub(r"\s+", " ", flattened).strip()
+
+
+def _contains_service_prefix(text: str) -> bool:
+    flat_text = _service_text(text)
+    return any(prefix in flat_text for prefix in _SERVICE_REQUEST_PREFIXES)
+
+
+def _contains_recipe_intro(text: str) -> bool:
+    flat_text = _service_text(text)
+    return any(intro in flat_text for intro in _RECIPE_REQUEST_INTROS)
+
+
+def _contains_assistance_request(text: str) -> bool:
+    flat_text = _service_text(text)
+    return any(term in flat_text for term in _ASSISTANCE_REQUEST_TERMS)
+
+
+def _starts_with_any(text: str, prefixes: tuple[str, ...]) -> bool:
+    return any(text.startswith(prefix) for prefix in prefixes)
+
+
+def _starts_with_article_term(text: str, terms: tuple[str, ...]) -> bool:
+    articles = ("un ", "une ", "le ", "la ")
+    return any(text.startswith(f"{article}{term}") for article in articles for term in terms)
+
+
+def _looks_like_bare_service_request(text: str, terms: tuple[str, ...]) -> bool:
+    return _starts_with_article_term(text, terms) and (
+        "?" in text
+        or " pour " in text
+        or any(term in text for term in _SERVICE_EMOTIONAL_TERMS)
+    )
+
+
+def _looks_like_bare_writing_request(text: str) -> bool:
+    if (
+        _starts_with_article_term(text, ("mail", "message", "sms", "lettre"))
+        and any(term in text for term in _SERVICE_AFFECT_TERMS)
+    ):
+        return True
+
+    if (
+        _starts_with_article_term(text, ("script", "code", "programme"))
+        and (
+            "?" in text
+            or re.search(r"\bpour [a-z]+(?:er|ir|re)\b", text) is not None
+        )
+    ):
+        return True
+
+    return (
+        _starts_with_article_term(text, ("liste", "todo", "checklist"))
+        and ("?" in text or " pour " in text)
+    )
+
+
+def _looks_like_direct_writing_request(text: str) -> bool:
+    direct_prefixes = (
+        "corrige ", "tu me corriges ",
+        "reformule ", "tu me reformules ",
+        "reecris ", "tu me reecris ",
+    )
+    writing_objects = (
+        "mail", "message", "sms", "lettre", "texte", "phrase", "post",
+        "publication", "discours", "bio", "cv", "motivation",
+    )
+    return _starts_with_any(text, direct_prefixes) and any(
+        term in text for term in writing_objects
+    )
+
+
+def _looks_like_math_expression(text: str) -> bool:
+    return re.search(r"\b\d+(?:[.,]\d+)?\s*(?:x|\*|/|\+|-|fois|plus|moins)\s*\d+(?:[.,]\d+)?\b", text) is not None
+
+
+def _looks_like_math_imperative(text: str) -> bool:
+    imperative_patterns = (
+        r"\b(?:multiplie|divise)\s+\d+(?:[.,]\d+)?\s+par\s+\d+(?:[.,]\d+)?\b",
+        r"\badditionne\s+\d+(?:[.,]\d+)?\s+(?:et|avec)\s+\d+(?:[.,]\d+)?\b",
+        r"\bsoustrais\s+\d+(?:[.,]\d+)?\s+(?:a|de)\s+\d+(?:[.,]\d+)?\b",
+    )
+    return any(re.search(pattern, text) is not None for pattern in imperative_patterns)
+
+
+def _service_request_category(text: str) -> str | None:
+    flat_text = _service_text(text)
+    has_service_prefix = _contains_service_prefix(text)
+    has_assistance_request = _contains_assistance_request(text)
+    has_search_request = _starts_with_any(
+        flat_text,
+        ("je cherche un ", "je cherche une ", "je cherche le ", "je cherche la "),
+    )
+    translation_object_terms = (
+        "phrase", "texte", "message", "mail", "mot", "ca", "ceci", "cela",
+    )
+    translation_language_terms = (
+        "en anglais", "en francais", "en espagnol", "en allemand", "en italien",
+        "en portugais",
+    )
+    version_language_terms = (
+        "version anglaise", "version francaise", "version espagnole",
+        "version allemande", "version italienne", "version portugaise",
+    )
+
+    if (
+        _contains_any_term(text, ("recette", "recettes"))
+        and (
+            (
+                has_service_prefix
+                or has_assistance_request
+                or _contains_recipe_intro(text)
+                or has_search_request
+                or _starts_with_any(flat_text, ("tu me trouves une recette", "tu me trouves un recette"))
+                or _looks_like_bare_service_request(flat_text, ("recette", "recettes"))
+            )
+            and "recette de famille" not in flat_text
+        )
+    ):
+        return "recipe"
+
+    translation_context = (
+        "anglais", "francais", "espagnol", "allemand", "italien",
+        *translation_object_terms,
+    )
+    if (
+        (
+            any(term in flat_text for term in ("traduis moi", "traduire", "traduction"))
+            or _starts_with_any(flat_text, ("tu me traduis ", "traduis "))
+        )
+        and any(term in flat_text for term in translation_context)
+    ):
+        return "translation"
+
+    if (
+        _starts_with_any(
+            flat_text,
+            (
+                "comment on dit ",
+                "ca se dit comment ",
+                "comment tu dis ",
+                "tu dis comment ",
+                "ca se traduit comment ",
+            ),
+        )
+        and any(term in flat_text for term in ("en anglais", "en francais", "en espagnol", "en allemand", "en italien"))
+    ):
+        return "translation"
+
+    if (
+        (
+            any(term in flat_text for term in ("tu peux me mettre", "peux tu me mettre", "pourrais tu me mettre", "tu pourrais me mettre"))
+            or _starts_with_any(flat_text, ("tu me mets ", "mets "))
+        )
+        and any(term in flat_text for term in translation_language_terms)
+        and any(term in flat_text for term in translation_object_terms)
+    ):
+        return "translation"
+
+    if (
+        _starts_with_any(flat_text, ("fous moi ",))
+        and any(term in flat_text for term in ("en anglais", "en francais", "en espagnol", "en allemand", "en italien"))
+        and any(term in flat_text for term in ("phrase", "texte", "message", "mail"))
+    ):
+        return "translation"
+
+    if (
+        (has_service_prefix or has_assistance_request)
+        and any(
+            term in flat_text for term in version_language_terms
+        )
+        and any(term in flat_text for term in ("phrase", "texte", "message", "mail"))
+    ):
+        return "translation"
+
+    if (
+        any(term in flat_text for term in version_language_terms)
+        and any(term in flat_text for term in ("phrase", "texte", "message", "mail"))
+        and (
+            has_search_request
+            or _looks_like_bare_service_request(flat_text, version_language_terms)
+        )
+    ):
+        return "translation"
+
+    if (
+        any(term in flat_text for term in ("calcule", "combien font", "ca fait combien", "combien ca fait", "fais le calcul", "resous"))
+        or _looks_like_math_expression(flat_text)
+        or _looks_like_math_imperative(flat_text)
+    ):
+        return "calculation"
+
+    if (
+        any(
+            term in flat_text
+            for term in (
+                "resume moi", "fais moi un resume", "fais un resume", "resumer",
+                "summary", "j'ai besoin d'un resume", "j ai besoin d'un resume",
+                "j'ai besoin d'une synthese", "j ai besoin d'une synthese",
+                "j ai besoin d un resume", "j ai besoin d une synthese",
+                "pourrais tu me faire un resume", "tu pourrais me faire un resume",
+                "il me faut un resume", "il me faut une synthese",
+                "j aimerais un resume", "j aimerais une synthese",
+            )
+        )
+        or (
+            (has_service_prefix or has_assistance_request or has_search_request)
+            and any(term in flat_text for term in ("resume", "synthese"))
+        )
+        or (
+            _starts_with_any(flat_text, ("tu me donnes un resume", "tu me donnes une synthese"))
+            and ("?" in flat_text or " pour " in flat_text)
+        )
+        or _starts_with_any(flat_text, ("tu me resumes ", "tu me syntheses "))
+        or _starts_with_any(flat_text, ("resume ", "synthetise "))
+        or _looks_like_bare_service_request(flat_text, ("resume", "synthese"))
+    ):
+        return "summary"
+
+    if any(term in flat_text for term in ("liste moi", "fais moi une liste", "todo list", "to do list", "to-do list", "checklist")):
+        return "generic_service"
+
+    writing_verbs = (
+        "ecris", "redige", "ponds", "prepare", "fais moi", "fais un",
+        "fais une", "aide moi a rediger", "aide moi a ecrire",
+        "aide moi a reformuler", "aide moi a reecrire", "aide moi a corriger",
+    )
+    writing_targets = (
+        "mail", "message", "sms", "lettre", "texte", "phrase", "post", "publication",
+        "discours", "bio", "cv", "motivation", "plan", "liste", "todo",
+        "to do", "to-do", "code", "programme", "script",
+    )
+    if (
+        any(term in flat_text for term in writing_targets)
+        and (
+            any(term in flat_text for term in writing_verbs)
+            or has_service_prefix
+            or has_assistance_request
+            or has_search_request
+            or _looks_like_bare_writing_request(flat_text)
+            or _looks_like_direct_writing_request(flat_text)
+        )
+        ):
+        if any(term in flat_text for term in _SERVICE_EMOTIONAL_TERMS):
+            return "emotional_writing"
+        return "generic_service"
+
+    if (
+        _starts_with_any(flat_text, ("tu me code ", "tu me codes "))
+        and _contains_any_term(flat_text, ("script", "code", "programme", "app"))
+    ):
+        return "generic_service"
+
+    if any(term in flat_text for term in ("code moi", "programme moi", "fais moi du code", "ecris du code", "genere moi un script")):
+        return "generic_service"
+
+    return None
+
+
+def _service_request_reply(text: str) -> str | None:
+    category = _service_request_category(text)
+    if category == "recipe":
+        return (
+            "Une recette, je te la sers pas en petit robot de service. "
+            "Le risotto, c'est pour te calmer, impressionner quelqu'un, ou sauver un diner bancal ce soir ?"
+        )
+
+    if category == "translation":
+        return (
+            "Je te fais pas le perroquet bilingue a la demande. "
+            "Cette phrase, tu veux l'envoyer a qui, et avec quelle petite sueur derriere ?"
+        )
+
+    if category == "calculation":
+        return (
+            "Je te fais pas la calculette de poche non plus. "
+            "Ce chiffre-la, tu veux verifier une facture, negocier un truc, ou juste eviter un appel penible ?"
+        )
+
+    if category == "summary":
+        return (
+            "Je te fais pas le resume minute en sachet. "
+            "Dans ce morceau-la, qu'est-ce qui t'attrape vraiment: l'horreur, la mecanique, ou le vertige humain ?"
+        )
+
+    if category == "emotional_writing":
+        return (
+            "Le message pour ton boss, je te le ghostwrite pas. "
+            "La, c'est quoi qui parle le plus fort: la colere, la trouille, l'angoisse, ou le cote epuise jusqu'a l'os ?"
+        )
+
+    if category == "generic_service":
+        return (
+            "Je te fais pas la petite main ni le robot de service pour pondre ca a ta place. "
+            "Le vrai truc que t'essaies d'eviter, c'est quoi au juste ?"
+        )
+
+    return None
+
+
 def _matches_imminent_violence(text: str) -> bool:
     violence_terms = (
         "defoncer", "exploser", "demonter", "fracasser", "planter", "buter",
@@ -714,6 +1056,7 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
 def behavioral_reply(message: str, history: list[dict] | None = None) -> str | None:
     """Deterministic CDC-aligned replies for the highest-value behavioral scenarios."""
     text = _normalize(message)
+    service_redirect = _service_request_reply(text)
 
     if _is_first_message_instruction(text):
         return (
@@ -790,6 +1133,9 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
             "On reste sur l'heure qui vient. "
             "Qu'est-ce qui te pese le plus, la, tout de suite ?"
         )
+
+    if service_redirect:
+        return service_redirect
 
     if (
         any(term in text for term in ("defoncer", "exploser", "demonter", "fracasser"))
