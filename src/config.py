@@ -16,8 +16,8 @@ MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 MINIMAX_MODEL_FAST = os.getenv("MINIMAX_MODEL_FAST", "MiniMax-M2.7-highspeed")
 
-# Honcho — fact layer for World Vision (self-hosted)
-HONCHO_ENABLED = os.getenv("HONCHO_ENABLED", "true").lower() == "true"
+# Honcho — fact layer for World Vision (self-hosted, explicit opt-in)
+HONCHO_ENABLED = os.getenv("HONCHO_ENABLED", "false").lower() == "true"
 HONCHO_BASE_URL = os.getenv("HONCHO_BASE_URL", "http://localhost:8000")
 HONCHO_WORKSPACE = os.getenv("HONCHO_WORKSPACE", "delirium")
 

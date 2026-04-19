@@ -65,12 +65,27 @@ from src.process_cleanup import (
 
 # Internal logger (file only, never shown to user)
 Path(SQLITE_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    handlers=[logging.FileHandler(SQLITE_DB_PATH.replace(".db", ".log"), encoding="utf-8")],
-)
 logger = logging.getLogger("delirium")
+_DELIRIUM_LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+_DELIRIUM_FILE_HANDLER_MARKER = "_delirium_file_handler"
+
+
+def _configure_file_logger() -> None:
+    log_path = str(Path(SQLITE_DB_PATH.replace(".db", ".log")).resolve())
+
+    for handler in logger.handlers:
+        if (
+            getattr(handler, _DELIRIUM_FILE_HANDLER_MARKER, False)
+            and getattr(handler, "baseFilename", None) == log_path
+        ):
+            logger.setLevel(logging.INFO)
+            return
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    setattr(file_handler, _DELIRIUM_FILE_HANDLER_MARKER, True)
+    file_handler.setFormatter(logging.Formatter(_DELIRIUM_LOG_FORMAT))
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.INFO)
 SESSION_IDLE_TIMEOUT = timedelta(minutes=30)
 MAX_S1_RESPONSE_CHARS = 4096
 _BOOLEAN_TRUE_STRINGS = {"1", "true", "yes", "on"}
@@ -119,6 +134,7 @@ class Delirium:
     """Main orchestrator."""
 
     def __init__(self):
+        _configure_file_logger()
         self.llm = LLMClient()
         self.async_llm = AsyncLLMClient()
         self.episodic = EpisodicMemory(SQLITE_DB_PATH)
