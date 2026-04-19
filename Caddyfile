@@ -1,0 +1,4 @@
+# Change to your domain when deployed
+:80 {
+    reverse_proxy delirium:8080
+}

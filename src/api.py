@@ -4,6 +4,9 @@ import json
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
@@ -164,6 +167,18 @@ def create_app(
     api_backend: DeliriumApiBackend | None = None,
 ) -> FastAPI:
     app = FastAPI(title="DELIRIUM API", version="0.1.0")
+
+    # Serve PWA frontend
+    static_dir = Path(__file__).resolve().parent.parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/")
+    async def root():
+        index = Path(__file__).resolve().parent.parent / "static" / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"message": "DELIRIUM API", "docs": "/docs"}
     _set_app_dependencies(app, session_manager, api_backend)
 
     @app.get("/health")

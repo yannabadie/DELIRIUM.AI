@@ -1,0 +1,96 @@
+services:
+  delirium:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: .env
+    depends_on:
+      honcho-database:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    volumes:
+      - delirium-data:/app/data
+    restart: unless-stopped
+
+  honcho-api:
+    build:
+      context: ./honcho
+      dockerfile: Dockerfile
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: ./honcho/.env
+    depends_on:
+      honcho-database:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION_URI=postgresql+psycopg://postgres:postgres@honcho-database:5432/postgres
+      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
+    restart: unless-stopped
+
+  honcho-deriver:
+    build:
+      context: ./honcho
+      dockerfile: Dockerfile
+    entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
+    env_file: ./honcho/.env
+    depends_on:
+      honcho-database:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION_URI=postgresql+psycopg://postgres:postgres@honcho-database:5432/postgres
+      - CACHE_URL=redis://honcho-redis:6379/0?suppress=true
+    restart: unless-stopped
+
+  honcho-database:
+    image: pgvector/pgvector:pg15
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - honcho-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  honcho-redis:
+    image: redis:8.2
+    volumes:
+      - honcho-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - delirium
+    restart: unless-stopped
+
+volumes:
+  delirium-data:
+  honcho-pgdata:
+  honcho-redis-data:
+  caddy-data:
+  caddy-config:
