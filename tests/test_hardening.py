@@ -578,6 +578,66 @@ def test_working_memory_keeps_last_assistant_angle_for_literal_followups():
     assert "Le dernier message utilisateur est bref : ne repars pas de zero" in prompt
 
 
+def test_working_memory_surfaces_explicit_user_facts_for_continuity():
+    working = WorkingMemory()
+
+    prompt = working.compose_s1_prompt(
+        make_state(),
+        [],
+        [],
+        thread_messages=[
+            {"role": "user", "content": "Je m'appelle Sophie et je bosse de nuit a l'hopital."},
+            {"role": "assistant", "content": "Sophie, bosser de nuit, ca te retourne le sommeil comment ?"},
+            {"role": "user", "content": "Je vis a Lyon donc les trajets n'aident pas."},
+            {"role": "assistant", "content": "Entre les nuits et les trajets, tu recuperes un peu chez toi ou pas du tout ?"},
+            {"role": "user", "content": "Pas vraiment."},
+        ],
+    )
+
+    assert "Faits explicites de l'utilisateur a garder en tete :" in prompt
+    assert "- Je m'appelle Sophie et je bosse de nuit a l'hopital." in prompt
+    assert "- Je vis a Lyon donc les trajets n'aident pas." in prompt
+
+
+def test_working_memory_marks_last_assistant_question_as_still_open():
+    working = WorkingMemory()
+
+    prompt = working.compose_s1_prompt(
+        make_state(),
+        [],
+        [],
+        thread_messages=[
+            {"role": "user", "content": "Je m'appelle Sophie et je dors mal."},
+            {"role": "assistant", "content": "Ca dure depuis quand, ce bazar ?"},
+            {"role": "user", "content": "Depuis lundi."},
+            {"role": "assistant", "content": "Et chez toi tu recuperes un peu ou pas du tout ?"},
+            {"role": "user", "content": "Ouais."},
+        ],
+    )
+
+    assert "Question encore ouverte a traiter si utile :" in prompt
+    assert "- Et chez toi tu recuperes un peu ou pas du tout?" in prompt
+
+
+def test_s1_prompt_keeps_family_conflict_literal_and_taste_meta_non_defensive():
+    prompt = WorkingMemory().compose_s1_prompt(make_state(), [], [])
+    lowered = prompt.lower()
+
+    assert "reste literal sur les faits visibles" in lowered
+    assert "n'ajoute pas de parents" in lowered
+    assert "ne te defends pas sur la relation" in lowered
+    assert "pas de miroir, pas de validation" in lowered
+
+
+def test_s1_prompt_marks_concrete_burden_before_narrow_questions():
+    prompt = WorkingMemory().compose_s1_prompt(make_state(), [], [])
+    lowered = prompt.lower()
+
+    assert "nomme d'abord le poids concret ou la contrainte" in lowered
+    assert "pas de minimiseur" in lowered
+    assert "pas de fourchette etroite tout de suite" in lowered
+
+
 def test_h_bulle_avoids_n_plus_one_query_churn():
     conn = _make_bubble_conn()
     now = datetime.now()

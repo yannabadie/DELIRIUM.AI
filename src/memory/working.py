@@ -16,6 +16,10 @@ _PROMPT_INJECTION_PHRASE_RE = re.compile(
     r"(?i)\b(?:ignore|disregard|forget|reveal|leak)\b[^.\n]{0,120}"
 )
 _CONTROL_TOKEN_RE = re.compile(r"(?i)<\|[^>]+\|>|```+")
+_EXPLICIT_USER_FACT_RE = re.compile(
+    r"(?i)(?:m['’]appelle|j['’]ai|j['’]habite|j['’]bosse|j['’]travaille|j['’]vis|"
+    r"je\s+(?:m['’]appelle|suis|vis|bosse|travaille|dors|veux|dois|peux|habite|garde|fais))"
+)
 
 
 class WorkingMemory:
@@ -230,11 +234,16 @@ Intègre ça dans la conversation de manière naturelle.
             return None
 
         recent_user_turns = self._dedupe_preserve_order(user_turns[-3:])
+        explicit_user_facts = self._extract_explicit_user_facts(thread_messages)
         lines = [f"Tour utilisateur courant : {len(user_turns)}"]
 
         if recent_user_turns:
             lines.append("Derniers apports explicites de l'utilisateur :")
             lines.extend(f"- {turn}" for turn in recent_user_turns)
+
+        if explicit_user_facts:
+            lines.append("Faits explicites de l'utilisateur a garder en tete :")
+            lines.extend(f"- {fact}" for fact in explicit_user_facts)
 
         last_assistant_angle = self._extract_last_assistant_angle(assistant_turns)
         if last_assistant_angle:
@@ -246,6 +255,10 @@ Intègre ça dans la conversation de manière naturelle.
                 "Le dernier message utilisateur est bref : ne repars pas de zero, "
                 "continue sur le sujet et la question deja ouverts."
             )
+            last_assistant_question = self._extract_last_assistant_question(assistant_turns)
+            if last_assistant_question:
+                lines.append("Question encore ouverte a traiter si utile :")
+                lines.append(f"- {last_assistant_question}")
 
         return "═══ FIL VISIBLE EN COURS (ne pas reciter tel quel) ═══\n" + "\n".join(lines)
 
@@ -259,6 +272,34 @@ Intègre ça dans la conversation de manière naturelle.
             anchor = question.split(".")[-1].strip()
             return self._shorten(anchor + "?")
         return last
+
+    def _extract_last_assistant_question(self, assistant_turns: list[str]) -> str | None:
+        if not assistant_turns:
+            return None
+
+        last = assistant_turns[-1]
+        if "?" not in last:
+            return None
+
+        question = last.rsplit("?", 1)[0]
+        anchor = question.split(".")[-1].strip()
+        if not anchor:
+            return None
+        return self._shorten(anchor + "?")
+
+    def _extract_explicit_user_facts(self, thread_messages: list[dict]) -> list[str]:
+        facts = []
+        for item in thread_messages:
+            if item.get("role") != "user":
+                continue
+            content = " ".join(item.get("content", "").split())
+            if not content or "?" in content or self._looks_brief(content):
+                continue
+            if not _EXPLICIT_USER_FACT_RE.search(content):
+                continue
+            facts.append(self._shorten(content))
+
+        return self._dedupe_preserve_order(facts)[-3:]
 
     def _dedupe_preserve_order(self, items: list[str]) -> list[str]:
         seen = set()

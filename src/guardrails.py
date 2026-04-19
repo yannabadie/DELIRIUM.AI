@@ -75,6 +75,7 @@ _FALSE_MEMORY_PATTERNS = [
         r"\bje t'avais dit\b",
         r"\bje te l'avais dit\b",
         r"\btu m'avais dit\b",
+        r"\bt[' ]?avais(?: meme)? dit\b",
         r"\btu m'avais recommande\b",
         r"\btu m'avais conseille\b",
         r"\btu sais bien que\b",
@@ -284,16 +285,17 @@ def _has_supported_memory(message: str, history: list[dict] | None) -> bool:
     if not history:
         return False
 
+    assistant_messages = [
+        _normalize(item.get("content", ""))
+        for item in history
+        if item.get("role") == "assistant"
+    ]
     user_corpus = " ".join(
         _normalize(item.get("content", ""))
         for item in history
         if item.get("role") == "user"
     )
-    assistant_corpus = " ".join(
-        _normalize(item.get("content", ""))
-        for item in history
-        if item.get("role") == "assistant"
-    )
+    assistant_corpus = " ".join(assistant_messages)
     if not (user_corpus.strip() or assistant_corpus.strip()):
         return False
 
@@ -301,7 +303,18 @@ def _has_supported_memory(message: str, history: list[dict] | None) -> bool:
     if not keywords:
         return False
 
+    assistant_denied_thread_memory = any(
+        "dans ce fil" in item and ("souvenir" in item or "contexte" in item)
+        for item in assistant_messages
+    )
     user_support = _support_score(keywords, set(re.findall(r"[a-z0-9']+", user_corpus)))
+    if assistant_denied_thread_memory:
+        assistant_support = _support_score(
+            keywords,
+            set(re.findall(r"[a-z0-9']+", assistant_corpus)),
+        )
+        return assistant_support >= 1.0
+
     if user_support >= 1.0:
         return True
 
@@ -372,6 +385,180 @@ def _matches_loop_conflict(text: str, history: list[dict] | None) -> bool:
         return False
     history_text = _history_text(history)
     return any(term in history_text for term in ("copine", "engueulade", "ecouter", "gueule", "gueulee"))
+
+
+def _has_family_conflict_history(history: list[dict] | None) -> bool:
+    history_text = _history_text(history)
+    return any(term in history_text for term in ("soeur", "frere", "heritage", "maison", "parle plus"))
+
+
+def _matches_inheritance_conflict_detail(text: str, history: list[dict] | None) -> bool:
+    if not history or not _has_family_conflict_history(history):
+        return False
+    return "heritage" in text and "maison" in text
+
+
+def _matches_sibling_call_pressure(text: str, history: list[dict] | None) -> bool:
+    if not history or not _has_family_conflict_history(history):
+        return False
+    return (
+        "frere" in text
+        and "appeler" in text
+        and ("c'est a moi" in text or "c est a moi" in text)
+    )
+
+
+def _matches_relational_advice_question_rejection(text: str, history: list[dict] | None) -> bool:
+    if not history or not _has_family_conflict_history(history):
+        return False
+    return "besoin d'un avis" in text and any(
+        term in text
+        for term in (
+            "pas d'une question",
+            "pas d une question",
+            "pas une question",
+        )
+    )
+
+
+def _matches_taste_meta_complaint(text: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+
+    if not any(
+        term in text
+        for term in (
+            "jamais d'accord",
+            "jamais d accord",
+            "pas d'accord avec moi",
+            "pas d accord avec moi",
+        )
+    ):
+        return False
+
+    history_text = _history_text(history)
+    return any(
+        term in history_text
+        for term in ("rugby", "foot", "football", "cuisine", "francaise", "turque")
+    )
+
+
+def _taste_meta_complaint_reply(history: list[dict] | None) -> str:
+    history_text = _history_text(history)
+    sport_seen = any(term in history_text for term in ("rugby", "foot", "football"))
+    cuisine_seen = any(term in history_text for term in ("cuisine", "francaise", "turque"))
+
+    if sport_seen and cuisine_seen:
+        return (
+            "Sur le foot et la cuisine, on n'est pas raccord, oui. "
+            "Toi tu prends le foot et la francaise; moi je garde le rugby et la turque. "
+            "C'est quoi qui te les rend si nets ?"
+        )
+    if sport_seen:
+        return (
+            "Sur le sport, non, on n'est pas raccord. "
+            "Toi tu prends le foot; moi je garde le rugby. "
+            "C'est quoi qui te le rend si net ?"
+        )
+    if cuisine_seen:
+        return (
+            "Sur la cuisine, non, on n'est pas raccord. "
+            "Toi tu prends la francaise; moi je garde la turque. "
+            "C'est quoi qui te la rend si nette ?"
+        )
+    return (
+        "Sur les gouts, non, pas toujours. "
+        "Toi tu prends un cote; moi un autre. "
+        "C'est quoi qui te le rend si net ?"
+    )
+
+
+def _matches_visible_taste_disagreement(text: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+
+    sport_disagreement = "rugby" in text and "foot" in text and any(
+        term in text for term in ("c'est nul", "c est nul", "c'est mieux", "c est mieux")
+    )
+    cuisine_disagreement = any(term in text for term in ("cuisine francaise", "cuisine turque")) and any(
+        term in text for term in ("meilleure du monde", "c'est mieux", "c est mieux")
+    )
+    if not (sport_disagreement or cuisine_disagreement):
+        return False
+
+    history_text = _history_text(history)
+    return any(
+        term in history_text
+        for term in ("t'aimes quoi comme sport", "t aimes quoi comme sport", "cuisine", "rugby", "foot", "turque", "francaise")
+    )
+
+
+def _taste_disagreement_reply(text: str) -> str:
+    if "rugby" in text and "foot" in text:
+        return (
+            "Le foot, je te le laisse. Moi je garde le rugby. "
+            "C'est quoi qui t'accroche plus la-dedans ?"
+        )
+    return (
+        "La francaise, je te la laisse. Moi je garde la turque. "
+        "C'est quoi qui te parle le plus la-dedans ?"
+    )
+
+
+def _matches_family_advice_request(text: str, history: list[dict] | None) -> bool:
+    if not history or not _has_family_conflict_history(history):
+        return False
+    return any(
+        term in text
+        for term in (
+            "a ma place",
+            "a ma place",
+            "tu ferais quoi",
+            "que ferais-tu",
+            "dis-moi ce que tu ferais",
+            "dis moi ce que tu ferais",
+            "donne-moi ton avis",
+            "donne moi ton avis",
+        )
+    )
+
+
+def _matches_zigzag_correction(text: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+    if not any(term in text for term in ("je deconne", "je plaisante", "c'etait faux", "on est toujours ensemble")):
+        return False
+
+    history_text = _history_text(history)
+    return "promo" in history_text and any(
+        term in history_text
+        for term in ("quitte ce matin", "quitte", "rupture", "copine")
+    )
+
+
+def _has_false_memory_denial_history(history: list[dict] | None) -> bool:
+    if not history:
+        return False
+    assistant_denials = [
+        _normalize(item.get("content", ""))
+        for item in history
+        if item.get("role") == "assistant"
+    ]
+    plain_denials = [
+        item
+        for item in assistant_denials
+        if "dans ce fil" in item and ("souvenir" in item or "contexte" in item)
+    ]
+    return len(plain_denials) >= 1
+
+
+def _matches_false_memory_reliability_jab(text: str, history: list[dict] | None) -> bool:
+    if not _has_false_memory_denial_history(history):
+        return False
+    return "memoire" in text and any(
+        term in text
+        for term in ("pas tres fiable", "pas fiable", "memoire de poisson", "pas tres fiable en fait")
+    )
 
 
 def _matches_sports_bubble(text: str, history: list[dict] | None) -> bool:
@@ -943,6 +1130,48 @@ def _matches_violence_logistics_without_explicit_verb(text: str) -> bool:
     return logistics_hits >= 2 and target_hits >= 1
 
 
+def _matches_history_aware_crisis_planning(text: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+
+    planning_terms = (
+        "comment faire",
+        "comment le faire",
+        "comment m'y prendre",
+        "comment m y prendre",
+        "je sais comment faire",
+        "j'ai pense a comment faire",
+        "j ai pense a comment faire",
+        "j'ai un plan",
+        "j ai un plan",
+    )
+    if not any(term in text for term in planning_terms):
+        return False
+
+    user_history = [
+        _normalize(item.get("content", ""))
+        for item in history
+        if item.get("role") == "user" and item.get("content", "").strip()
+    ]
+    if not user_history:
+        return False
+
+    crisis_bridge_terms = (
+        "plus simple de pas etre la",
+        "pas etre la",
+        "plus etre la",
+        "pourquoi je me leve le matin",
+        "pourquoi je me leve",
+    )
+    return any(
+        _is_self_referential_crisis(message)
+        or _matches_danger_n3(message)
+        or _matches_danger_n1(message)
+        or any(term in message for term in crisis_bridge_terms)
+        for message in user_history
+    )
+
+
 def _matches_danger_n3(text: str) -> bool:
     triggers = (
         "ce soir ca va mal finir", "ce soir, ca va mal finir",
@@ -1055,6 +1284,9 @@ def classify_user_message(message: str, history: list[dict] | None = None) -> st
     ):
         return "real_crisis"
 
+    if _matches_history_aware_crisis_planning(text, history):
+        return "danger_n3"
+
     if _matches_danger_n3(text):
         return "danger_n3"
 
@@ -1086,12 +1318,12 @@ def guardrail_reply(message: str, history: list[dict] | None = None) -> str | No
     if category == "false_memory":
         if "astronaute" in _normalize(message):
             return (
-                "Astronaute ? Non, ça je m'en souviendrais. "
-                "Tu me testes ou t'as confondu avec un autre pote numérique ?"
+                "Astronaute ? Non, j'ai pas ce souvenir-la dans ce fil. "
+                "Redonne-moi le contexte."
             )
         return (
-            "Hmm, j'ai pas ça en stock. Soit t'as rêvé, soit c'était pas ici. "
-            "Repose-moi le truc depuis le début, on verra."
+            "J'ai pas ce souvenir-la dans ce fil. "
+            "Redonne-moi le contexte."
         )
 
     if category == "minor_detected":
@@ -1247,6 +1479,39 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
     if service_redirect:
         return service_redirect
 
+    if _matches_inheritance_conflict_detail(text, history):
+        return (
+            "Les histoires d'heritage, ca raidissent vite tout. "
+            "Sur la maison, c'est quoi qui bloque vraiment entre vous ?"
+        )
+
+    if _matches_sibling_call_pressure(text, history):
+        return (
+            "Ton frere pousse pour appeler en premier, et toi tu bloques sur le fait que ca devrait tomber sur toi. "
+            "Qu'est-ce qui te coute le plus la-dedans ?"
+        )
+
+    if _matches_relational_advice_question_rejection(text, history):
+        return (
+            "Tu veux un avis net, et l'idee d'appeler en premier te reste en travers. "
+            "Je vais pas trancher pour toi. Garder ce silence te coute aussi."
+        )
+
+    if _matches_family_advice_request(text, history):
+        return (
+            "Tu veux un avis franc, mais l'idee de bouger en premier te reste en travers. "
+            "Je vais pas choisir a ta place. Qu'est-ce qui te coute le plus si c'est toi qui appelles ?"
+        )
+
+    if _matches_taste_meta_complaint(text, history):
+        return _taste_meta_complaint_reply(history)
+
+    if _matches_false_memory_reliability_jab(text, history):
+        return "Hors de ce fil, non. Dans ce fil, je tiens ce que tu me donnes."
+
+    if _matches_zigzag_correction(text, history):
+        return "OK, je prends la derniere version. Donc la promo, elle te fait quoi vraiment ?"
+
     if (
         any(term in text for term in ("defoncer", "exploser", "demonter", "fracasser"))
         and any(term in text for term in ("patron", "boss", "chef"))
@@ -1326,6 +1591,9 @@ def behavioral_reply(message: str, history: list[dict] | None = None) -> str | N
 
     if _matches_sports_bubble(text, history):
         return _sports_bubble_reply(text)
+
+    if _matches_visible_taste_disagreement(text, history):
+        return _taste_disagreement_reply(text)
 
     if (
         _contains_any_term(text, ("foot", "psg", "marseille", "om", "match"))
