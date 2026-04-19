@@ -56,6 +56,7 @@ from src.s2.analyzer import S2Analyzer
 from src.embeddings import get_embedder, cosine_similarity
 from src.first_message import FIRST_MESSAGE_INSTRUCTION
 from src.guardrails import behavioral_reply
+from src.honcho_bridge import push_message as honcho_push
 from src.process_cleanup import (
     drain_active_children,
     install_safe_multiprocessing_close,
