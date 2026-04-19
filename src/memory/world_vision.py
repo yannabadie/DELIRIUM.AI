@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
+from src.honcho_bridge import get_facts_for_world_vision as _honcho_facts
 from src.config import get_vision_prompt, MINIMAX_MODEL
 from src.llm_client import LLMClient
 
@@ -66,6 +67,13 @@ class WorldVision:
         vision_prompt = get_vision_prompt()
 
         # Build input data for the LLM
+        # Query Honcho for structured facts (fail-safe)
+        honcho_facts = None
+        try:
+            honcho_facts = _honcho_facts()
+        except Exception:
+            pass
+
         input_data = {
             "themes": themes,
             "correlations": correlations,
@@ -73,6 +81,7 @@ class WorldVision:
             "danger_history": danger_history or {},
             "fragment_count": fragment_count,
             "current_date": datetime.now().isoformat(),
+            "honcho_user_facts": honcho_facts or "No Honcho data available",
         }
 
         try:
